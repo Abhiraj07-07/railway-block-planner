@@ -1,0 +1,4 @@
+defect_id,asset_code,section_id,severity,description,detected_date,status
+D001,SG001,1,CRITICAL,Signal equipment fault,2026-08-26,OPEN
+D002,TR001,1,HIGH,Track defect detected,2026-08-25,OPEN
+D003,OH002,2,HIGH,OHE abnormal condition,2026-08-26,OPEN

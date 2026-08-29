@@ -1,0 +1,4 @@
+train_id,train_no,train_name,train_type,priority
+1,12301,Superfast Express,EXPRESS,HIGH
+2,12555,Passenger Express,PASSENGER,MEDIUM
+3,G001,Freight Service,GOODS,MEDIUM

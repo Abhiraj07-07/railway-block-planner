@@ -1,0 +1,5 @@
+forecast_id,section_id,date,expected_goods_trains
+1,1,2026-08-28,8
+2,2,2026-08-28,12
+3,3,2026-08-28,6
+4,4,2026-08-28,4

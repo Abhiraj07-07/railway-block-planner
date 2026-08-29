@@ -1,0 +1,7 @@
+asset_id,asset_code,asset_type,section_id,department,criticality,status
+1,TR001,TRACK,1,Engineering,HIGH,ACTIVE
+2,SG001,SIGNAL,1,S&T,CRITICAL,ACTIVE
+3,OH001,OHE,1,Traction,HIGH,ACTIVE
+4,TR002,TRACK,2,Engineering,MEDIUM,ACTIVE
+5,SG002,SIGNAL,2,S&T,HIGH,ACTIVE
+6,OH002,OHE,2,Traction,HIGH,ACTIVE

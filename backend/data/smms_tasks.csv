@@ -1,0 +1,3 @@
+task_id,asset_code,section_id,task_type,severity,duration_hours,status,due_date
+SMMS001,SG001,1,Signal Maintenance,CRITICAL,1,PENDING,2026-08-29
+SMMS002,SG002,2,Signal Inspection,HIGH,2,OVERDUE,2026-08-24

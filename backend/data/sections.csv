@@ -1,0 +1,5 @@
+section_id,section_code,from_station,to_station,distance_km
+1,SEC01,LKO,BBK,28
+2,SEC02,BBK,CNB,110
+3,SEC03,CNB,PRYJ,200
+4,SEC04,PRYJ,BBS,120

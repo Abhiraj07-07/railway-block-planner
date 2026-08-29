@@ -1,25 +1,40 @@
-from urllib.parse import quote_plus
+import os
 
+from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
-DB_USER = "postgres"
-DB_PASSWORD = "Abhishek@2025"
-DB_HOST = "localhost"
-DB_PORT = "5432"
-DB_NAME = "railway_block_planner"
+load_dotenv()
 
-DATABASE_URL = (
-    f"postgresql://{DB_USER}:{quote_plus(DB_PASSWORD)}"
-    f"@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+if not DATABASE_URL:
+    DB_USER = os.getenv("DB_USER", "postgres")
+    DB_PASSWORD = os.getenv("DB_PASSWORD")
+    DB_HOST = os.getenv("DB_HOST", "localhost")
+    DB_PORT = os.getenv("DB_PORT", "5432")
+    DB_NAME = os.getenv("DB_NAME", "railway_block_planner")
+
+    if not DB_PASSWORD:
+        raise RuntimeError(
+            "Database password is not configured. "
+            "Set DB_PASSWORD or DATABASE_URL."
+        )
+
+    DATABASE_URL = (
+        f"postgresql://{DB_USER}:{DB_PASSWORD}"
+        f"@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+    )
+
+engine = create_engine(
+    DATABASE_URL,
+    pool_pre_ping=True,
 )
-
-engine = create_engine(DATABASE_URL)
 
 SessionLocal = sessionmaker(
     autocommit=False,
     autoflush=False,
-    bind=engine
+    bind=engine,
 )
 
 Base = declarative_base()
@@ -27,6 +42,7 @@ Base = declarative_base()
 
 def get_db():
     db = SessionLocal()
+
     try:
         yield db
     finally:

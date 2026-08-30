@@ -11,7 +11,7 @@ import {
 } from "recharts";
 import "./App.css";
 
-const API_BASE = "http://127.0.0.1:8000";
+const API_BASE = "https://railway-block-planner-production.up.railway.app";
 
 function App(){
   // ============================================================

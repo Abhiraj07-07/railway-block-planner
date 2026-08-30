@@ -11,9 +11,9 @@ import {
 } from "recharts";
 import "./App.css";
 
-const API_BASE = "https://railway-block-planner.onrender.com";
+const API_BASE = "http://127.0.0.1:8000";
 
-function App() {
+function App(){
   // ============================================================
   // STATE
   // ============================================================
@@ -74,13 +74,16 @@ function App() {
   // ============================================================
   // LOAD ALL DASHBOARD DATA
   // ============================================================
-
   const loadDashboard = async () => {
     try {
       setLoading(true);
       setError("");
 
-      const endpointNames = [
+      // ============================================================
+      // CORE / FAST DATA
+      // ============================================================
+
+      const coreEndpoints = [
         "stations",
         "sections",
         "assets",
@@ -91,9 +94,75 @@ function App() {
         "goods-forecast",
         "priority/tasks",
         "planner/blocks",
+        "events",
+      ];
+
+      const coreResponses = await Promise.all(
+        coreEndpoints.map((endpoint) =>
+          fetch(`${API_BASE}/${endpoint}`)
+        )
+      );
+
+      const failedCoreResponse = coreResponses.find(
+        (response) => !response.ok
+      );
+
+      if (failedCoreResponse) {
+        throw new Error(
+          `API request failed with status ${failedCoreResponse.status}`
+        );
+      }
+
+      const coreData = await Promise.all(
+        coreResponses.map((response) => response.json())
+      );
+
+      // ============================================================
+      // BASIC DATA
+      // ============================================================
+
+      setStations(coreData[0] || []);
+      setSections(coreData[1] || []);
+      setAssets(coreData[2] || []);
+      setMaintenanceTasks(coreData[3] || []);
+      setDefects(coreData[4] || []);
+      setTrains(coreData[5] || []);
+      setTrainSchedule(coreData[6] || []);
+      setGoodsForecast(coreData[7] || []);
+
+      // ============================================================
+      // PLANNING
+      // ============================================================
+
+      setPriorityTasks(
+        coreData[8]?.tasks || []
+      );
+
+      setPlannedBlocks(
+        coreData[9] || []
+      );
+
+      // ============================================================
+      // EVENTS
+      // ============================================================
+
+      setOperationalEvents(
+        coreData[10] || []
+      );
+
+      // ============================================================
+      // SHOW CORE DASHBOARD
+      // ============================================================
+
+      setLoading(false);
+
+      // ============================================================
+      // SECONDARY / AI DATA
+      // ============================================================
+
+      const secondaryEndpoints = [
         "planner/blocks/recommendations",
         "planner/optimization",
-        "events",
         "ai/risk/assets",
         "ai/smart-priority",
         "ai/decisions",
@@ -102,137 +171,100 @@ function App() {
         "ai/agent",
       ];
 
-      const responses = await Promise.all(
-        endpointNames.map((endpoint) =>
+      Promise.all(
+        secondaryEndpoints.map((endpoint) =>
           fetch(`${API_BASE}/${endpoint}`)
         )
-      );
+      )
+        .then(async (responses) => {
+          return Promise.all(
+            responses.map(async (response) => {
+              if (!response.ok) {
+                console.warn(
+                  `Secondary API failed: ${response.status}`
+                );
+                return null;
+              }
 
-      const failedResponse = responses.find(
-        (response) => !response.ok
-      );
+              return response.json();
+            })
+          );
+        })
+        .then((secondaryData) => {
+          // ========================================================
+          // PLANNING
+          // ========================================================
 
-      if (failedResponse) {
-        throw new Error(
-          `API request failed with status ${failedResponse.status}`
-        );
-      }
+          setBlockRecommendations(
+            secondaryData[0]?.recommendations || []
+          );
 
-      const data = await Promise.all(
-        responses.map((response) => response.json())
-      );
+          setOptimizedBlocks(
+            secondaryData[1]?.optimized_blocks || []
+          );
 
-      // ----------------------------------------------------------
-      // BASIC DATA
-      // ----------------------------------------------------------
+          // ========================================================
+          // AI
+          // ========================================================
 
-      setStations(data[0] || []);
-      setSections(data[1] || []);
-      setAssets(data[2] || []);
-      setMaintenanceTasks(data[3] || []);
-      setDefects(data[4] || []);
-      setTrains(data[5] || []);
-      setTrainSchedule(data[6] || []);
-      setGoodsForecast(data[7] || []);
+          setAssetRisks(
+            secondaryData[2]?.assets || []
+          );
 
-      // ----------------------------------------------------------
-      // PLANNING
-      // ----------------------------------------------------------
+          setSmartPriorities(
+            secondaryData[3]?.tasks || []
+          );
 
-      setPriorityTasks(data[8]?.tasks || []);
-      setPlannedBlocks(data[9] || []);
-      setBlockRecommendations(
-        data[10]?.recommendations || []
-      );
-      setOptimizedBlocks(
-        data[11]?.optimized_blocks || []
-      );
+          setAiDecisions(
+            secondaryData[4]?.decisions || []
+          );
 
-      // ----------------------------------------------------------
-      // EVENTS
-      // ----------------------------------------------------------
+          setAiBestPlan(
+            secondaryData[5]?.best_plan || null
+          );
 
-      setOperationalEvents(data[12] || []);
+          // ========================================================
+          // ANALYTICS
+          // ========================================================
 
-      // ----------------------------------------------------------
-      // AI
-      // ----------------------------------------------------------
+          setAdminAnalytics(
+            secondaryData[6] || null
+          );
 
-      setAssetRisks(data[13]?.assets || []);
-      setSmartPriorities(data[14]?.tasks || []);
-      setAiDecisions(data[15]?.decisions || []);
-      setAiBestPlan(data[16]?.best_plan || null);
+          // ========================================================
+          // AI AGENT
+          // ========================================================
 
-      // ----------------------------------------------------------
-      // ANALYTICS
-      // ----------------------------------------------------------
+          setAiAgent(
+            secondaryData[7] || null
+          );
+        })
+        .catch((err) => {
+          console.error(
+            "Background dashboard data error:",
+            err
+          );
+        });
 
-      setAdminAnalytics(data[17] || null);
-
-      // ----------------------------------------------------------
-      // AI AGENT
-      // ----------------------------------------------------------
-
-      setAiAgent(data[18] || null);
     } catch (err) {
-      console.error("Dashboard error:", err);
+      console.error(
+        "Dashboard error:",
+        err
+      );
+
       setError(err.message);
-    } finally {
       setLoading(false);
     }
   };
 
   // ============================================================
-  // INITIAL LOAD
-  // ============================================================
+// INITIAL DASHBOARD LOAD
+// ============================================================
 
-  useEffect(() => {
-    loadDashboard();
-  }, []);
+useEffect(() => {
+  loadDashboard();
+}, []);
 
-  // ============================================================
-  // DYNAMIC RE-PLANNING
-  // ============================================================
-
-  const handleReplan = async (eventId) => {
-    try {
-      setReplanningEventId(eventId);
-      setError("");
-
-      const response = await fetch(
-        `${API_BASE}/events/${eventId}/replan`,
-        {
-          method: "POST",
-          headers: {
-            Accept: "application/json",
-          },
-        }
-      );
-
-      if (!response.ok) {
-        const errorData = await response
-          .json()
-          .catch(() => null);
-
-        throw new Error(
-          errorData?.detail ||
-            `Re-planning failed with status ${response.status}`
-        );
-      }
-
-      const data = await response.json();
-
-      setReplanResults((previous) => ({
-        ...previous,
-        [eventId]: data.replanning_result,
-      }));
-    } catch (err) {
-      console.error("Re-planning error:", err);
-      setError(err.message);
-    } finally {
-      setReplanningEventId(null);
-    }
-  };
 
   // ============================================================
   // ASK AI OPERATIONS AGENT

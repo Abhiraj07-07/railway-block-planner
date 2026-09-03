@@ -1,0 +1,440 @@
+/* ============================================================
+   TRAIN OPERATIONS PAGE
+   ============================================================ */
+
+.trains-page {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+
+/* ============================================================
+   HERO
+   ============================================================ */
+
+.trains-hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+
+  gap: 20px;
+  padding: 28px;
+
+  border-radius: 18px;
+
+  background:
+    radial-gradient(
+      circle at 90% 20%,
+      rgba(59, 130, 246, 0.18),
+      transparent 30%
+    ),
+    linear-gradient(
+      135deg,
+      #eff6ff,
+      #ffffff
+    );
+
+  border: 1px solid #dbeafe;
+
+  box-shadow:
+    0 8px 25px rgba(37, 99, 235, 0.07);
+}
+
+.trains-eyebrow {
+  color: #2563eb;
+
+  font-size: 11px;
+  font-weight: 800;
+
+  letter-spacing: 1px;
+}
+
+.trains-hero h1 {
+  margin: 8px 0;
+
+  color: #0f172a;
+
+  font-size: 30px;
+}
+
+.trains-hero p {
+  margin: 0;
+
+  max-width: 700px;
+
+  color: #64748b;
+
+  font-size: 13px;
+
+  line-height: 1.6;
+}
+
+.trains-live-badge {
+  display: flex;
+  align-items: center;
+
+  gap: 8px;
+
+  padding: 8px 12px;
+
+  border-radius: 999px;
+
+  background: #ffffff;
+
+  color: #166534;
+
+  border: 1px solid #dcfce7;
+
+  font-size: 11px;
+  font-weight: 800;
+
+  white-space: nowrap;
+}
+
+.trains-live-badge .status-dot {
+  width: 8px;
+  height: 8px;
+
+  background: #22c55e;
+
+  border-radius: 50%;
+}
+
+
+/* ============================================================
+   SUMMARY
+   ============================================================ */
+
+.trains-summary {
+  display: grid;
+
+  grid-template-columns:
+    repeat(3, 1fr);
+
+  gap: 14px;
+}
+
+.train-summary-card {
+  padding: 18px;
+
+  border-radius: 14px;
+
+  background: #ffffff;
+
+  border: 1px solid #dbeafe;
+
+  box-shadow:
+    0 8px 24px rgba(15, 23, 42, 0.05);
+
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.train-summary-card:hover {
+  transform: translateY(-3px);
+
+  box-shadow:
+    0 12px 28px rgba(37, 99, 235, 0.10);
+}
+
+.train-summary-card span {
+  display: block;
+
+  margin-bottom: 8px;
+
+  color: #64748b;
+
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.train-summary-card strong {
+  color: #1d4ed8;
+
+  font-size: 27px;
+}
+
+
+/* ============================================================
+   COMMON CARD
+   ============================================================ */
+
+.trains-card {
+  padding: 22px;
+
+  border-radius: 16px;
+
+  background: #ffffff;
+
+  border: 1px solid #dbeafe;
+
+  box-shadow:
+    0 8px 24px rgba(15, 23, 42, 0.05);
+}
+
+.trains-card-header {
+  display: flex;
+
+  justify-content: space-between;
+  align-items: flex-start;
+
+  gap: 15px;
+
+  margin-bottom: 18px;
+}
+
+.trains-card-header h2 {
+  margin: 0;
+
+  color: #0f172a;
+
+  font-size: 19px;
+}
+
+.trains-card-header p {
+  margin: 5px 0 0;
+
+  color: #64748b;
+
+  font-size: 12px;
+}
+
+.trains-count {
+  padding: 7px 11px;
+
+  border-radius: 999px;
+
+  background: #eff6ff;
+
+  color: #1d4ed8;
+
+  font-size: 11px;
+  font-weight: 800;
+
+  white-space: nowrap;
+}
+
+
+/* ============================================================
+   TRAIN CARDS
+   ============================================================ */
+
+.train-list-grid {
+  display: grid;
+
+  grid-template-columns:
+    repeat(3, 1fr);
+
+  gap: 14px;
+}
+
+.train-operation-card {
+  padding: 17px;
+
+  border-radius: 12px;
+
+  background:
+    linear-gradient(
+      145deg,
+      #ffffff,
+      #f8fbff
+    );
+
+  border: 1px solid #dbeafe;
+
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.train-operation-card:hover {
+  transform: translateY(-3px);
+
+  border-color: #93c5fd;
+
+  box-shadow:
+    0 12px 25px rgba(37, 99, 235, 0.10);
+}
+
+.train-operation-top {
+  display: flex;
+
+  justify-content: space-between;
+  align-items: center;
+
+  gap: 10px;
+
+  margin-bottom: 12px;
+}
+
+.train-number {
+  color: #1d4ed8;
+
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.train-operation-card h3 {
+  margin: 0;
+
+  color: #0f172a;
+
+  font-size: 16px;
+}
+
+.train-operation-card > p {
+  margin: 5px 0 14px;
+
+  color: #64748b;
+
+  font-size: 12px;
+}
+
+.train-operation-info {
+  display: grid;
+
+  grid-template-columns:
+    repeat(2, 1fr);
+
+  gap: 8px;
+}
+
+.train-operation-info div {
+  padding: 10px;
+
+  border-radius: 8px;
+
+  background: #eff6ff;
+
+  border: 1px solid #dbeafe;
+}
+
+.train-operation-info span {
+  display: block;
+
+  margin-bottom: 4px;
+
+  color: #64748b;
+
+  font-size: 10px;
+}
+
+.train-operation-info strong {
+  color: #334155;
+
+  font-size: 12px;
+}
+
+
+/* ============================================================
+   TIME BADGE
+   ============================================================ */
+
+.time-badge {
+  display: inline-block;
+
+  padding: 5px 9px;
+
+  border-radius: 7px;
+
+  background: #eff6ff;
+
+  color: #1d4ed8;
+
+  border: 1px solid #dbeafe;
+
+  font-size: 11px;
+  font-weight: 700;
+}
+
+
+/* ============================================================
+   LOADING
+   ============================================================ */
+
+.trains-loading {
+  min-height: 150px;
+
+  display: flex;
+
+  flex-direction: column;
+
+  justify-content: center;
+  align-items: center;
+
+  gap: 10px;
+
+  color: #64748b;
+
+  font-size: 13px;
+}
+
+.trains-loading .loader {
+  width: 30px;
+  height: 30px;
+
+  border: 3px solid #dbeafe;
+
+  border-top-color: #2563eb;
+
+  border-radius: 50%;
+
+  animation: trainSpin 0.8s linear infinite;
+}
+
+@keyframes trainSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
+
+@media (max-width: 1000px) {
+  .train-list-grid {
+    grid-template-columns:
+      repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 800px) {
+  .trains-hero {
+    flex-direction: column;
+
+    align-items: flex-start;
+  }
+
+  .trains-summary {
+    grid-template-columns:
+      repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  .trains-summary,
+  .train-list-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .trains-card {
+    padding: 18px;
+  }
+
+  .trains-card-header {
+    flex-direction: column;
+  }
+
+  .trains-hero {
+    padding: 22px;
+  }
+
+  .trains-hero h1 {
+    font-size: 25px;
+  }
+}

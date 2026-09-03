@@ -52,29 +52,35 @@ def calculate_ai_decision(
     """
     Generate an explainable AI-assisted maintenance decision.
 
-    Combines:
-        - Existing maintenance priority
-        - Asset risk
-        - Train impact
-        - Current block recommendation
+    Decision combines:
+
+        1. Existing maintenance task priority
+        2. Rule-based asset risk
+        3. ML predicted asset risk
+        4. Combined asset risk
+        5. Train operational impact
+        6. Current block recommendation
+
+    ML is an additional decision signal.
+    Existing rule-based risk remains the safety fallback.
     """
 
-    # --------------------------------------------------------
-    # 1. Existing task priority
-    # --------------------------------------------------------
+    # ========================================================
+    # 1. EXISTING TASK PRIORITY
+    # ========================================================
 
     priority = calculate_task_priority(
         db=db,
         task=task,
     )
 
-    base_priority_score = priority[
-        "priority_score"
-    ]
+    base_priority_score = float(
+        priority["priority_score"]
+    )
 
-    # --------------------------------------------------------
-    # 2. Asset risk
-    # --------------------------------------------------------
+    # ========================================================
+    # 2. ASSET
+    # ========================================================
 
     asset = (
         db.query(Asset)
@@ -89,18 +95,93 @@ def calculate_ai_decision(
             f"Asset {task.asset_id} not found."
         )
 
+    # ========================================================
+    # 3. ASSET RISK
+    # ========================================================
+
     risk = calculate_asset_risk(
         db=db,
         asset=asset,
     )
 
-    asset_risk_score = risk[
-        "risk_score"
-    ]
+    # --------------------------------------------------------
+    # Rule-based risk
+    # --------------------------------------------------------
+
+    rule_based_risk_score = float(
+        risk.get(
+            "rule_based_risk_score",
+            risk.get(
+                "risk_score",
+                0,
+            ),
+        )
+    )
+
+    rule_based_risk_level = risk.get(
+        "rule_based_risk_level",
+        risk.get(
+            "risk_level",
+            "LOW",
+        ),
+    )
 
     # --------------------------------------------------------
-    # 3. Find related maintenance block
+    # ML risk
     # --------------------------------------------------------
+
+    ml_prediction_available = bool(
+        risk.get(
+            "ml_prediction_available",
+            False,
+        )
+    )
+
+    ml_risk_percentage = risk.get(
+        "ml_risk_percentage"
+    )
+
+    ml_risk_probability = risk.get(
+        "ml_risk_probability"
+    )
+
+    ml_risk_level = risk.get(
+        "ml_risk_level"
+    )
+
+    ml_prediction = risk.get(
+        "ml_prediction"
+    )
+
+    ml_model_validation_accuracy = risk.get(
+        "ml_model_validation_accuracy"
+    )
+
+    # --------------------------------------------------------
+    # Combined risk
+    # --------------------------------------------------------
+
+    asset_risk_score = float(
+        risk.get(
+            "combined_risk_score",
+            risk.get(
+                "risk_score",
+                0,
+            ),
+        )
+    )
+
+    combined_risk_level = risk.get(
+        "combined_risk_level",
+        risk.get(
+            "risk_level",
+            "LOW",
+        ),
+    )
+
+    # ========================================================
+    # 4. FIND RELATED BLOCK
+    # ========================================================
 
     block = (
         db.query(Block)
@@ -113,9 +194,9 @@ def calculate_ai_decision(
         .first()
     )
 
-    # --------------------------------------------------------
-    # 4. Calculate train impact
-    # --------------------------------------------------------
+    # ========================================================
+    # 5. TRAIN IMPACT
+    # ========================================================
 
     if block is not None:
 
@@ -124,42 +205,44 @@ def calculate_ai_decision(
             block=block,
         )
 
-        impact_level = recommendation[
-            "impact_level"
-        ]
+        impact_level = recommendation.get(
+            "impact_level",
+            "NONE",
+        )
 
         impact_score = IMPACT_SCORE.get(
             impact_level,
             50,
         )
 
-        recommended_action = recommendation[
-            "recommended_action"
-        ]
+        recommended_action = recommendation.get(
+            "recommended_action",
+            "SCHEDULE",
+        )
 
-        alternative_start_time = recommendation[
+        alternative_start_time = recommendation.get(
             "alternative_start_time"
-        ]
+        )
 
-        alternative_end_time = recommendation[
+        alternative_end_time = recommendation.get(
             "alternative_end_time"
-        ]
+        )
 
-        conflict_count = recommendation[
-            "conflict_count"
-        ]
+        conflict_count = recommendation.get(
+            "conflict_count",
+            0,
+        )
 
-        affected_train_ids = recommendation[
-            "affected_train_ids"
-        ]
+        affected_train_ids = recommendation.get(
+            "affected_train_ids",
+            [],
+        )
 
     else:
 
         impact_level = "NONE"
 
-        impact_score = IMPACT_SCORE[
-            "NONE"
-        ]
+        impact_score = IMPACT_SCORE["NONE"]
 
         recommended_action = "SCHEDULE"
 
@@ -169,29 +252,31 @@ def calculate_ai_decision(
         conflict_count = 0
         affected_train_ids = []
 
-    # --------------------------------------------------------
-    # 5. AI decision score
-    # --------------------------------------------------------
+    # ========================================================
+    # 6. AI DECISION SCORE
+    # ========================================================
 
     ai_decision_score = round(
         (
             base_priority_score
             * SMART_PRIORITY_WEIGHT
         )
-        + (
+        +
+        (
             asset_risk_score
             * ASSET_RISK_WEIGHT
         )
-        + (
+        +
+        (
             impact_score
             * TRAIN_IMPACT_WEIGHT
         ),
         2,
     )
 
-    # --------------------------------------------------------
-    # 6. Final AI action
-    # --------------------------------------------------------
+    # ========================================================
+    # 7. FINAL AI ACTION
+    # ========================================================
 
     if (
         asset_risk_score >= 80
@@ -200,6 +285,7 @@ def calculate_ai_decision(
             "LOW",
         }
     ):
+
         final_action = (
             "SCHEDULE_IMMEDIATELY"
         )
@@ -213,6 +299,7 @@ def calculate_ai_decision(
             "HIGH",
         }
     ):
+
         final_action = (
             "RESCHEDULE_TO_SAFE_WINDOW"
         )
@@ -223,6 +310,7 @@ def calculate_ai_decision(
         base_priority_score >= 80
         and impact_level == "NONE"
     ):
+
         final_action = (
             "SCHEDULE_NEXT_SAFE_WINDOW"
         )
@@ -261,52 +349,122 @@ def calculate_ai_decision(
 
         decision_level = "LOW"
 
-    # --------------------------------------------------------
-    # 7. Explainable decision
-    # --------------------------------------------------------
+    # ========================================================
+    # 8. EXPLAINABLE DECISION REASONS
+    # ========================================================
 
     decision_reasons = []
 
+    # --------------------------------------------------------
+    # Task priority
+    # --------------------------------------------------------
+
     if base_priority_score >= 80:
+
         decision_reasons.append(
             "High maintenance task priority"
         )
 
-    if asset_risk_score >= 80:
+    elif base_priority_score >= 60:
+
         decision_reasons.append(
-            "Critical asset risk detected"
+            "Moderate maintenance task priority"
         )
 
-    elif asset_risk_score >= 60:
+    # --------------------------------------------------------
+    # Rule-based risk
+    # --------------------------------------------------------
+
+    if rule_based_risk_score >= 80:
+
         decision_reasons.append(
-            "High asset risk detected"
+            "Critical rule-based asset risk detected"
         )
+
+    elif rule_based_risk_score >= 60:
+
+        decision_reasons.append(
+            "High rule-based asset risk detected"
+        )
+
+    # --------------------------------------------------------
+    # ML risk
+    # --------------------------------------------------------
+
+    if (
+        ml_prediction_available
+        and ml_risk_percentage is not None
+    ):
+
+        if ml_risk_percentage >= 80:
+
+            decision_reasons.append(
+                (
+                    "ML model predicts very high "
+                    f"asset risk ({ml_risk_percentage}%)"
+                )
+            )
+
+        elif ml_risk_percentage >= 60:
+
+            decision_reasons.append(
+                (
+                    "ML model predicts elevated "
+                    f"asset risk ({ml_risk_percentage}%)"
+                )
+            )
+
+        elif ml_risk_percentage >= 35:
+
+            decision_reasons.append(
+                (
+                    "ML model indicates moderate "
+                    f"asset risk ({ml_risk_percentage}%)"
+                )
+            )
+
+    # --------------------------------------------------------
+    # Train impact
+    # --------------------------------------------------------
 
     if impact_level == "HIGH":
+
         decision_reasons.append(
             "High train operational impact"
         )
 
     elif impact_level == "MEDIUM":
+
         decision_reasons.append(
             "Moderate train operational impact"
         )
 
+    elif impact_level == "LOW":
+
+        decision_reasons.append(
+            "Low train operational impact"
+        )
+
+    # --------------------------------------------------------
+    # Fallback explanation
+    # --------------------------------------------------------
+
     if not decision_reasons:
+
         decision_reasons.append(
             "No major operational risk detected"
         )
 
-    # --------------------------------------------------------
-    # 8. Final recommendation text
-    # --------------------------------------------------------
+    # ========================================================
+    # 9. FINAL RECOMMENDATION TEXT
+    # ========================================================
 
     if final_action == "SCHEDULE_IMMEDIATELY":
 
         recommendation_text = (
             "AI recommends immediate scheduling "
-            "because the asset risk is high and "
-            "train impact is manageable."
+            "because the combined asset risk is high "
+            "and train impact is manageable."
         )
 
     elif final_action == "RESCHEDULE_TO_SAFE_WINDOW":
@@ -328,7 +486,7 @@ def calculate_ai_decision(
 
         recommendation_text = (
             "AI recommends prioritizing this task "
-            "because the asset has elevated risk."
+            "because the asset has elevated combined risk."
         )
 
     elif final_action == "PLAN_PROACTIVELY":
@@ -344,33 +502,120 @@ def calculate_ai_decision(
             "and normal maintenance scheduling."
         )
 
+    # ========================================================
+    # 10. RETURN
+    # ========================================================
+
     return {
+        # ----------------------------------------------------
+        # Task
+        # ----------------------------------------------------
+
         "task_id": task.task_id,
         "task_code": task.task_code,
 
         "asset_id": task.asset_id,
         "section_id": task.section_id,
 
-        "base_priority_score": base_priority_score,
+        # ----------------------------------------------------
+        # Priority
+        # ----------------------------------------------------
 
-        "asset_risk_score": asset_risk_score,
-        "risk_level": risk["risk_level"],
+        "base_priority_score": round(
+            base_priority_score,
+            2,
+        ),
+
+        # ----------------------------------------------------
+        # Rule-based risk
+        # ----------------------------------------------------
+
+        "rule_based_risk_score": round(
+            rule_based_risk_score,
+            2,
+        ),
+
+        "rule_based_risk_level": (
+            rule_based_risk_level
+        ),
+
+        # ----------------------------------------------------
+        # ML risk
+        # ----------------------------------------------------
+
+        "ml_prediction_available": (
+            ml_prediction_available
+        ),
+
+        "ml_prediction": ml_prediction,
+
+        "ml_risk_probability": (
+            ml_risk_probability
+        ),
+
+        "ml_risk_percentage": (
+            ml_risk_percentage
+        ),
+
+        "ml_risk_level": (
+            ml_risk_level
+        ),
+
+        "ml_model_validation_accuracy": (
+            ml_model_validation_accuracy
+        ),
+
+        # ----------------------------------------------------
+        # Combined risk
+        # ----------------------------------------------------
+
+        "asset_risk_score": round(
+            asset_risk_score,
+            2,
+        ),
+
+        "combined_risk_score": round(
+            asset_risk_score,
+            2,
+        ),
+
+        "combined_risk_level": (
+            combined_risk_level
+        ),
+
+        # ----------------------------------------------------
+        # Train impact
+        # ----------------------------------------------------
 
         "train_impact_level": impact_level,
+
         "train_impact_score": impact_score,
-
-        "ai_decision_score": ai_decision_score,
-        "decision_level": decision_level,
-
-        "final_action": final_action,
-
-        "recommended_action": recommended_action,
 
         "conflict_count": conflict_count,
 
         "affected_train_ids": (
             affected_train_ids
         ),
+
+        # ----------------------------------------------------
+        # AI decision
+        # ----------------------------------------------------
+
+        "ai_decision_score": (
+            ai_decision_score
+        ),
+
+        "decision_level": decision_level,
+
+        "final_action": final_action,
+
+        "recommended_action": (
+            recommended_action
+        ),
+
+        # ----------------------------------------------------
+        # Recommended safe window
+        # ----------------------------------------------------
 
         "alternative_start_time": (
             alternative_start_time
@@ -379,6 +624,10 @@ def calculate_ai_decision(
         "alternative_end_time": (
             alternative_end_time
         ),
+
+        # ----------------------------------------------------
+        # Explainability
+        # ----------------------------------------------------
 
         "decision_reasons": (
             decision_reasons
@@ -400,6 +649,8 @@ def calculate_all_ai_decisions(
     """
     Generate AI-assisted maintenance decisions
     for all active tasks.
+
+    Results are ranked by AI decision score.
     """
 
     tasks = (
@@ -427,12 +678,16 @@ def calculate_all_ai_decisions(
             task=task,
         )
 
-        results.append(result)
+        results.append(
+            result
+        )
 
     return sorted(
         results,
         key=lambda item: (
-            item["ai_decision_score"],
+            item[
+                "ai_decision_score"
+            ],
             item["task_id"],
         ),
         reverse=True,

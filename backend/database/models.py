@@ -9,7 +9,9 @@ from sqlalchemy import (
     Time,
     DateTime,
     ForeignKey,
+    text,
 )
+
 from sqlalchemy.orm import relationship
 
 from backend.database.connection import Base
@@ -692,3 +694,46 @@ class OperationalEvent(Base):
     train = relationship(
         "Train"
     )    
+    
+# ============================================================
+# 13. USERS / ADMIN AUTHENTICATION
+# ============================================================
+
+class User(Base):
+    __tablename__ = "users"
+
+    user_id = Column(
+        Integer,
+        primary_key=True,
+        index=True
+    )
+
+    username = Column(
+        String(50),
+        unique=True,
+        nullable=False,
+        index=True
+    )
+
+    password_hash = Column(
+        String(255),
+        nullable=False
+    )
+
+    role = Column(
+        String(20),
+        nullable=False,
+        default="ADMIN"
+    )
+
+    is_active = Column(
+        Boolean,
+        nullable=False,
+        default=True
+    )
+
+    created_at = Column(
+        DateTime,
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP")
+    )

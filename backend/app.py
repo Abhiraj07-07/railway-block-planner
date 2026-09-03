@@ -1,23 +1,41 @@
-
 from datetime import date, datetime
-
-from numpy import block
-from backend.engines.ai_agent import (
-    run_ai_operations_agent,
-    ask_ai_agent,
-)
+from threading import Lock
+from time import monotonic
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from backend.auth.dependencies import require_admin
+from backend.auth.routes import router as auth_router
+
+from backend.database.connection import get_db
+from backend.database.models import (
+    Asset,
+    Block,
+    BlockTask,
+    Defect,
+    GoodsForecast,
+    MaintenanceTask,
+    OperationalEvent,
+    Section,
+    Station,
+    Train,
+    TrainSchedule,
+)
+
 from backend.engines.analytics_engine import (
-    get_operational_kpis,
-    get_maintenance_analytics,
-    get_defect_analytics,
-    get_block_analytics,
-    get_ai_analytics,
     get_admin_analytics,
+)
+
+from backend.engines.ai_agent import (
+    ask_ai_agent,
+    run_ai_operations_agent,
+)
+
+from backend.engines.ai_decision_engine import (
+    calculate_all_ai_decisions,
 )
 
 from backend.engines.ai_planner import (
@@ -25,53 +43,63 @@ from backend.engines.ai_planner import (
     get_ai_plan_summary,
 )
 
+from backend.engines.block_planner import (
+    generate_maintenance_plan,
+)
 
-from backend.engines.ai_decision_engine import (
-    calculate_ai_decision,
-    calculate_all_ai_decisions,
+from backend.engines.horizon_planner import (
+    generate_horizon_plan,
+)
+
+from backend.engines.optimization_engine import (
+    analyze_all_blocks,
+    analyze_block_impact,
+    optimize_all_blocks,
+    recommend_reschedule,
+    recommend_rescheduling_for_all_blocks,
+    replan_after_event,
+)
+
+from backend.engines.priority_engine import (
+    calculate_all_priorities,
 )
 
 from backend.engines.risk_engine import (
-    calculate_asset_risk,
     calculate_all_asset_risks,
-    calculate_smart_priority,
     calculate_all_smart_priorities,
+    calculate_asset_risk,
+    invalidate_risk_cache,
 )
 
-from backend.database.connection import get_db
-from backend.database.models import (
-    Station,
-    Section,
-    Asset,
-    MaintenanceTask,
-    Defect,
-    Train,
-    TrainSchedule,
-    GoodsForecast,
-    Block,
-    BlockTask,
-    OperationalEvent,
+from backend.integrations.integration_service import (
+    integration_service,
 )
-from backend.engines.priority_engine import calculate_all_priorities
-from backend.engines.block_planner import generate_maintenance_plan
 
-from backend.engines.optimization_engine import (
-    analyze_block_impact,
-    analyze_all_blocks,
-    recommend_reschedule,
-    recommend_rescheduling_for_all_blocks,
-    optimize_all_blocks,
-    replan_after_event,
+from backend.ml.predict import (
+    predict_all_asset_risks,
+    predict_asset_risk,
 )
+
+
 # ============================================================
 # FASTAPI APP
 # ============================================================
 
 app = FastAPI(
     title="AI Automatic Railway Block Planner",
-    description="Railway maintenance and automatic block planning system",
+    description=(
+        "Railway maintenance and automatic block "
+        "planning system"
+    ),
     version="1.0.0",
 )
+
+
+# ============================================================
+# AUTH ROUTER
+# ============================================================
+
+app.include_router(auth_router)
 
 
 # ============================================================
@@ -85,6 +113,98 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ============================================================
+# AI RESPONSE CACHE
+#
+# Used to avoid recalculating the same expensive AI results
+# repeatedly during short dashboard sessions.
+# ============================================================
+
+AI_CACHE_TTL_SECONDS = 8.0
+
+_ai_cache = {
+    "asset_risks": None,
+    "smart_priorities": None,
+    "decisions": None,
+    "best_plan": None,
+}
+
+_ai_cache_time = {
+    "asset_risks": 0.0,
+    "smart_priorities": 0.0,
+    "decisions": 0.0,
+    "best_plan": 0.0,
+}
+
+_ai_cache_lock = Lock()
+
+
+def clear_ai_cache():
+    """
+    Clear API-level AI cache and the risk-engine cache.
+    """
+
+    global _ai_cache
+    global _ai_cache_time
+
+    with _ai_cache_lock:
+        _ai_cache = {
+            "asset_risks": None,
+            "smart_priorities": None,
+            "decisions": None,
+            "best_plan": None,
+        }
+
+        _ai_cache_time = {
+            "asset_risks": 0.0,
+            "smart_priorities": 0.0,
+            "decisions": 0.0,
+            "best_plan": 0.0,
+        }
+
+    invalidate_risk_cache()
+
+
+def get_cached_ai(key: str):
+    """
+    Return cached AI data if still valid.
+    """
+
+    now = monotonic()
+
+    with _ai_cache_lock:
+        value = _ai_cache.get(key)
+        created_at = _ai_cache_time.get(
+            key,
+            0.0,
+        )
+
+        if (
+            value is not None
+            and (
+                now - created_at
+            ) < AI_CACHE_TTL_SECONDS
+        ):
+            return value
+
+    return None
+
+
+def set_cached_ai(
+    key: str,
+    value,
+):
+    """
+    Store an AI result in the short-lived cache.
+    """
+
+    with _ai_cache_lock:
+        _ai_cache[key] = value
+        _ai_cache_time[key] = monotonic()
+
+
 # ============================================================
 # HOME
 # ============================================================
@@ -92,7 +212,9 @@ app.add_middleware(
 @app.get("/")
 def home():
     return {
-        "message": "Railway Block Planner API is running"
+        "message": (
+            "Railway Block Planner API is running"
+        )
     }
 
 
@@ -106,15 +228,20 @@ def get_stations(
 ):
     stations = (
         db.query(Station)
-        .order_by(Station.station_id)
+        .order_by(
+            Station.station_id
+        )
         .all()
     )
 
     return [
         {
-            "station_id": station.station_id,
-            "station_code": station.station_code,
-            "station_name": station.station_name,
+            "station_id":
+                station.station_id,
+            "station_code":
+                station.station_code,
+            "station_name":
+                station.station_name,
         }
         for station in stations
     ]
@@ -130,22 +257,31 @@ def get_sections(
 ):
     sections = (
         db.query(Section)
-        .order_by(Section.section_id)
+        .order_by(
+            Section.section_id
+        )
         .all()
     )
 
     return [
         {
-            "section_id": section.section_id,
-            "section_code": section.section_code,
-            "from_station_id": section.from_station_id,
-            "to_station_id": section.to_station_id,
+            "section_id":
+                section.section_id,
+            "section_code":
+                section.section_code,
+            "from_station_id":
+                section.from_station_id,
+            "to_station_id":
+                section.to_station_id,
             "distance_km": (
-                float(section.distance_km)
+                float(
+                    section.distance_km
+                )
                 if section.distance_km is not None
                 else None
             ),
-            "status": section.status,
+            "status":
+                section.status,
         }
         for section in sections
     ]
@@ -161,19 +297,28 @@ def get_assets(
 ):
     assets = (
         db.query(Asset)
-        .order_by(Asset.asset_id)
+        .order_by(
+            Asset.asset_id
+        )
         .all()
     )
 
     return [
         {
-            "asset_id": asset.asset_id,
-            "asset_code": asset.asset_code,
-            "asset_type": asset.asset_type,
-            "section_id": asset.section_id,
-            "department_id": asset.department_id,
-            "criticality": asset.criticality,
-            "status": asset.status,
+            "asset_id":
+                asset.asset_id,
+            "asset_code":
+                asset.asset_code,
+            "asset_type":
+                asset.asset_type,
+            "section_id":
+                asset.section_id,
+            "department_id":
+                asset.department_id,
+            "criticality":
+                asset.criticality,
+            "status":
+                asset.status,
         }
         for asset in assets
     ]
@@ -188,30 +333,48 @@ def get_maintenance_tasks(
     db: Session = Depends(get_db),
 ):
     tasks = (
-        db.query(MaintenanceTask)
-        .order_by(MaintenanceTask.task_id)
+        db.query(
+            MaintenanceTask
+        )
+        .order_by(
+            MaintenanceTask.task_id
+        )
         .all()
     )
 
     return [
         {
-            "task_id": task.task_id,
-            "task_code": task.task_code,
-            "source_system": task.source_system,
-            "department_id": task.department_id,
-            "asset_id": task.asset_id,
-            "section_id": task.section_id,
-            "task_type": task.task_type,
-            "severity": task.severity,
+            "task_id":
+                task.task_id,
+            "task_code":
+                task.task_code,
+            "source_system":
+                task.source_system,
+            "department_id":
+                task.department_id,
+            "asset_id":
+                task.asset_id,
+            "section_id":
+                task.section_id,
+            "task_type":
+                task.task_type,
+            "severity":
+                task.severity,
             "duration_hours": (
-                float(task.duration_hours)
+                float(
+                    task.duration_hours
+                )
                 if task.duration_hours is not None
                 else None
             ),
-            "status": task.status,
-            "due_date": task.due_date,
-            "description": task.description,
-            "created_at": task.created_at,
+            "status":
+                task.status,
+            "due_date":
+                task.due_date,
+            "description":
+                task.description,
+            "created_at":
+                task.created_at,
         }
         for task in tasks
     ]
@@ -227,20 +390,30 @@ def get_defects(
 ):
     defects = (
         db.query(Defect)
-        .order_by(Defect.defect_id)
+        .order_by(
+            Defect.defect_id
+        )
         .all()
     )
 
     return [
         {
-            "defect_id": defect.defect_id,
-            "defect_code": defect.defect_code,
-            "asset_id": defect.asset_id,
-            "section_id": defect.section_id,
-            "severity": defect.severity,
-            "description": defect.description,
-            "detected_date": defect.detected_date,
-            "status": defect.status,
+            "defect_id":
+                defect.defect_id,
+            "defect_code":
+                defect.defect_code,
+            "asset_id":
+                defect.asset_id,
+            "section_id":
+                defect.section_id,
+            "severity":
+                defect.severity,
+            "description":
+                defect.description,
+            "detected_date":
+                defect.detected_date,
+            "status":
+                defect.status,
         }
         for defect in defects
     ]
@@ -256,17 +429,24 @@ def get_trains(
 ):
     trains = (
         db.query(Train)
-        .order_by(Train.train_id)
+        .order_by(
+            Train.train_id
+        )
         .all()
     )
 
     return [
         {
-            "train_id": train.train_id,
-            "train_no": train.train_no,
-            "train_name": train.train_name,
-            "train_type": train.train_type,
-            "priority": train.priority,
+            "train_id":
+                train.train_id,
+            "train_no":
+                train.train_no,
+            "train_name":
+                train.train_name,
+            "train_type":
+                train.train_type,
+            "priority":
+                train.priority,
         }
         for train in trains
     ]
@@ -281,22 +461,30 @@ def get_train_schedule(
     db: Session = Depends(get_db),
 ):
     schedules = (
-        db.query(TrainSchedule)
+        db.query(
+            TrainSchedule
+        )
         .order_by(
             TrainSchedule.schedule_date,
-            TrainSchedule.arrival_time,
+            TrainSchedule.departure_time,
         )
         .all()
     )
 
     return [
         {
-            "schedule_id": schedule.schedule_id,
-            "train_id": schedule.train_id,
-            "section_id": schedule.section_id,
-            "schedule_date": schedule.schedule_date,
-            "arrival_time": schedule.arrival_time,
-            "departure_time": schedule.departure_time,
+            "schedule_id":
+                schedule.schedule_id,
+            "train_id":
+                schedule.train_id,
+            "section_id":
+                schedule.section_id,
+            "schedule_date":
+                schedule.schedule_date,
+            "arrival_time":
+                schedule.arrival_time,
+            "departure_time":
+                schedule.departure_time,
         }
         for schedule in schedules
     ]
@@ -311,7 +499,9 @@ def get_goods_forecast(
     db: Session = Depends(get_db),
 ):
     forecasts = (
-        db.query(GoodsForecast)
+        db.query(
+            GoodsForecast
+        )
         .order_by(
             GoodsForecast.forecast_date,
             GoodsForecast.section_id,
@@ -321,30 +511,36 @@ def get_goods_forecast(
 
     return [
         {
-            "forecast_id": forecast.forecast_id,
-            "section_id": forecast.section_id,
-            "forecast_date": forecast.forecast_date,
-            "expected_goods_trains": (
-                forecast.expected_goods_trains
-            ),
+            "forecast_id":
+                forecast.forecast_id,
+            "section_id":
+                forecast.section_id,
+            "forecast_date":
+                forecast.forecast_date,
+            "expected_goods_trains":
+                forecast.expected_goods_trains,
         }
         for forecast in forecasts
     ]
 
 
 # ============================================================
-# MAINTENANCE PRIORITY ENGINE
+# PRIORITY ENGINE
 # ============================================================
 
 @app.get("/priority/tasks")
 def get_priority_tasks(
     db: Session = Depends(get_db),
 ):
-    priorities = calculate_all_priorities(db)
+    priorities = calculate_all_priorities(
+        db
+    )
 
     return {
-        "total_tasks": len(priorities),
-        "tasks": priorities,
+        "total_tasks":
+            len(priorities),
+        "tasks":
+            priorities,
     }
 
 
@@ -358,26 +554,125 @@ def get_planner_recommendations(
     db: Session = Depends(get_db),
 ):
     tasks = (
-        db.query(MaintenanceTask)
+        db.query(
+            MaintenanceTask
+        )
         .filter(
             MaintenanceTask.status.notin_(
-                ["COMPLETED", "CANCELLED"]
+                [
+                    "COMPLETED",
+                    "CANCELLED",
+                ]
             )
         )
         .all()
     )
 
-    recommendations = generate_maintenance_plan(
-        db=db,
-        tasks=tasks,
-        schedule_date=schedule_date,
+    recommendations = (
+        generate_maintenance_plan(
+            db=db,
+            tasks=tasks,
+            schedule_date=schedule_date,
+        )
     )
 
     return {
-        "schedule_date": schedule_date,
-        "total_tasks": len(tasks),
-        "recommendations": recommendations,
+        "schedule_date":
+            schedule_date,
+        "total_tasks":
+            len(tasks),
+        "recommendations":
+            recommendations,
     }
+
+
+# ============================================================
+# WEEKLY / MONTHLY HORIZON PLANNING
+# ============================================================
+
+class HorizonPlanRequest(BaseModel):
+    start_date: date
+    end_date: date
+    horizon: str = "WEEKLY"
+
+
+@app.post("/planner/horizon-plan")
+def create_horizon_plan(
+    request: HorizonPlanRequest,
+    db: Session = Depends(get_db),
+):
+    horizon = (
+        request.horizon
+        .upper()
+        .strip()
+    )
+
+    if horizon not in {
+        "WEEKLY",
+        "MONTHLY",
+    }:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Invalid horizon. "
+                "Allowed values: WEEKLY, MONTHLY."
+            ),
+        )
+
+    if (
+        request.end_date
+        < request.start_date
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "end_date must be greater than "
+                "or equal to start_date."
+            ),
+        )
+
+    total_days = (
+        request.end_date
+        - request.start_date
+    ).days + 1
+
+    if (
+        horizon == "WEEKLY"
+        and total_days > 7
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Weekly planning can cover maximum 7 days."
+            ),
+        )
+
+    if (
+        horizon == "MONTHLY"
+        and total_days > 30
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Monthly planning can cover maximum 30 days."
+            ),
+        )
+
+    try:
+        result = generate_horizon_plan(
+            db=db,
+            start_date=request.start_date,
+            end_date=request.end_date,
+            horizon=horizon,
+        )
+
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        )
+
+    return result
 
 
 # ============================================================
@@ -392,29 +687,25 @@ def create_maintenance_block(
     end_time: str,
     task_ids: list[int],
     db: Session = Depends(get_db),
+    current_user=Depends(require_admin),
 ):
-    """
-    Create and save a maintenance block.
-    """
-
-    # --------------------------------------------------------
-    # Basic validation
-    # --------------------------------------------------------
-
     if not task_ids:
         raise HTTPException(
             status_code=400,
-            detail="At least one task ID is required.",
+            detail=(
+                "At least one task ID is required."
+            ),
         )
 
-    # --------------------------------------------------------
-    # Validate section
-    # --------------------------------------------------------
+    unique_task_ids = list(
+        dict.fromkeys(task_ids)
+    )
 
     section = (
         db.query(Section)
         .filter(
-            Section.section_id == section_id
+            Section.section_id
+            == section_id
         )
         .first()
     )
@@ -422,41 +713,49 @@ def create_maintenance_block(
     if section is None:
         raise HTTPException(
             status_code=404,
-            detail=f"Section {section_id} not found.",
+            detail=(
+                f"Section {section_id} not found."
+            ),
         )
 
-    # --------------------------------------------------------
-    # Validate tasks
-    # --------------------------------------------------------
-
     tasks = (
-        db.query(MaintenanceTask)
+        db.query(
+            MaintenanceTask
+        )
         .filter(
-            MaintenanceTask.task_id.in_(task_ids)
+            MaintenanceTask.task_id.in_(
+                unique_task_ids
+            )
         )
         .all()
     )
 
-    if len(tasks) != len(set(task_ids)):
+    if (
+        len(tasks)
+        != len(unique_task_ids)
+    ):
         raise HTTPException(
             status_code=404,
-            detail="One or more task IDs were not found.",
+            detail=(
+                "One or more task IDs were not found."
+            ),
         )
 
     for task in tasks:
+
         if task.section_id != section_id:
             raise HTTPException(
                 status_code=400,
                 detail=(
-                    "All selected tasks must belong "
-                    "to the same section."
+                    "All selected tasks must "
+                    "belong to the same section."
                 ),
             )
 
-        if task.status in [
+        if task.status in {
             "COMPLETED",
             "CANCELLED",
-        ]:
+        }:
             raise HTTPException(
                 status_code=400,
                 detail=(
@@ -465,10 +764,6 @@ def create_maintenance_block(
                     f"{task.status}."
                 ),
             )
-
-    # --------------------------------------------------------
-    # Parse times
-    # --------------------------------------------------------
 
     try:
         parsed_start_time = datetime.strptime(
@@ -484,25 +779,31 @@ def create_maintenance_block(
     except ValueError:
         raise HTTPException(
             status_code=400,
-            detail="Time must be in HH:MM format.",
+            detail=(
+                "Time must be in HH:MM format."
+            ),
         )
 
-    if parsed_start_time >= parsed_end_time:
+    if (
+        parsed_start_time
+        >= parsed_end_time
+    ):
         raise HTTPException(
             status_code=400,
-            detail="Start time must be before end time.",
+            detail=(
+                "Start time must be before end time."
+            ),
         )
-
-    # --------------------------------------------------------
-    # Prevent block overlap on same section/date
-    # --------------------------------------------------------
 
     existing_blocks = (
         db.query(Block)
         .filter(
-            Block.section_id == section_id,
-            Block.block_date == block_date,
-            Block.status != "CANCELLED",
+            Block.section_id
+            == section_id,
+            Block.block_date
+            == block_date,
+            Block.status
+            != "CANCELLED",
         )
         .all()
     )
@@ -520,37 +821,36 @@ def create_maintenance_block(
     for existing_block in existing_blocks:
 
         existing_start = (
-            existing_block.start_time.hour * 60
+            existing_block.start_time.hour
+            * 60
             + existing_block.start_time.minute
         )
 
         existing_end = (
-            existing_block.end_time.hour * 60
+            existing_block.end_time.hour
+            * 60
             + existing_block.end_time.minute
         )
 
-        overlap = (
-            new_start_minutes < existing_end
-            and existing_start < new_end_minutes
-        )
-
-        if overlap:
+        if (
+            new_start_minutes
+            < existing_end
+            and existing_start
+            < new_end_minutes
+        ):
             raise HTTPException(
                 status_code=409,
                 detail=(
-                    "The requested block overlaps an "
-                    "existing block on this section."
+                    "The requested block overlaps "
+                    "an existing block on this section."
                 ),
             )
-
-    # --------------------------------------------------------
-    # Generate block code
-    # --------------------------------------------------------
 
     existing_count = (
         db.query(Block)
         .filter(
-            Block.block_date == block_date
+            Block.block_date
+            == block_date
         )
         .count()
     )
@@ -560,10 +860,6 @@ def create_maintenance_block(
         f"{existing_count + 1:03d}"
     )
 
-    # --------------------------------------------------------
-    # Create block
-    # --------------------------------------------------------
-
     block = Block(
         block_code=block_code,
         section_id=section_id,
@@ -571,7 +867,7 @@ def create_maintenance_block(
         start_time=parsed_start_time,
         end_time=parsed_end_time,
         reason=(
-            f"Automatic maintenance block for "
+            "Automatic maintenance block for "
             f"{len(tasks)} task(s)"
         ),
         status="PLANNED",
@@ -580,23 +876,16 @@ def create_maintenance_block(
     db.add(block)
     db.flush()
 
-    # --------------------------------------------------------
-    # Create BlockTask records
-    # --------------------------------------------------------
-
     for task in tasks:
-        block_task = BlockTask(
-            block_id=block.block_id,
-            task_id=task.task_id,
+
+        db.add(
+            BlockTask(
+                block_id=block.block_id,
+                task_id=task.task_id,
+            )
         )
 
-        db.add(block_task)
-
         task.status = "SCHEDULED"
-        
-       # --------------------------------------------------------
-    # Calculate initial train impact
-    # --------------------------------------------------------
 
     impact = analyze_block_impact(
         db=db,
@@ -606,76 +895,116 @@ def create_maintenance_block(
     recommendation = recommend_reschedule(
         db=db,
         block=block,
-    )  
-    
-    # --------------------------------------------------------
-# Save initial recommendation on block
-# --------------------------------------------------------
+    )
 
-    alternative_start = recommendation["alternative_start_time"]
-    alternative_end = recommendation["alternative_end_time"]
+    alternative_start = (
+        recommendation.get(
+            "alternative_start_time"
+        )
+    )
+
+    alternative_end = (
+        recommendation.get(
+            "alternative_end_time"
+        )
+    )
 
     actual_timing_changed = (
-    alternative_start is not None
-    and alternative_end is not None
-    and (
-        alternative_start != block.start_time
-        or alternative_end != block.end_time
+        alternative_start is not None
+        and alternative_end is not None
+        and (
+            alternative_start
+            != block.start_time
+            or
+            alternative_end
+            != block.end_time
+        )
     )
-)
 
     block.replan_required = (
-    recommendation["recommended_action"]
-    in {
-        "RESCHEDULE",
-        "CONSIDER_RESCHEDULE",
-    }
-    and actual_timing_changed
-)
+        recommendation.get(
+            "recommended_action"
+        )
+        in {
+            "RESCHEDULE",
+            "CONSIDER_RESCHEDULE",
+        }
+        and actual_timing_changed
+    )
 
     block.recommended_start_time = (
-    alternative_start if actual_timing_changed else None
-)
+        alternative_start
+        if actual_timing_changed
+        else None
+    )
 
     block.recommended_end_time = (
-    alternative_end if actual_timing_changed else None
-)
-          
-
-    # --------------------------------------------------------
-    # Commit
-    # --------------------------------------------------------
+        alternative_end
+        if actual_timing_changed
+        else None
+    )
 
     db.commit()
+
+    clear_ai_cache()
+
     db.refresh(block)
-    
-    
-    
+
     return {
-    "message": "Maintenance block created successfully",
-    "block": {
-        "block_id": block.block_id,
-        "block_code": block.block_code,
-        "section_id": block.section_id,
-        "block_date": block.block_date,
-        "start_time": block.start_time,
-        "end_time": block.end_time,
-        "reason": block.reason,
-        "status": block.status,
-        "task_ids": task_ids,
-
-        # Initial train impact
-        "conflict_count": impact["conflict_count"],
-        "affected_train_ids": impact["affected_train_ids"],
-        "total_conflict_minutes": impact["total_conflict_minutes"],
-        "impact_level": impact["impact_level"],
-
-        # Recommendation
-        "recommended_action": recommendation["recommended_action"],
-        "recommendation": recommendation["recommendation"],
-        "alternative_start_time": recommendation["alternative_start_time"],
-        "alternative_end_time": recommendation["alternative_end_time"],
-             },
+        "message": (
+            "Maintenance block created successfully"
+        ),
+        "block": {
+            "block_id":
+                block.block_id,
+            "block_code":
+                block.block_code,
+            "section_id":
+                block.section_id,
+            "block_date":
+                block.block_date,
+            "start_time":
+                block.start_time,
+            "end_time":
+                block.end_time,
+            "reason":
+                block.reason,
+            "status":
+                block.status,
+            "task_ids":
+                unique_task_ids,
+            "conflict_count":
+                impact.get(
+                    "conflict_count",
+                    0,
+                ),
+            "affected_train_ids":
+                impact.get(
+                    "affected_train_ids",
+                    [],
+                ),
+            "total_conflict_minutes":
+                impact.get(
+                    "total_conflict_minutes",
+                    0,
+                ),
+            "impact_level":
+                impact.get(
+                    "impact_level"
+                ),
+            "recommended_action":
+                recommendation.get(
+                    "recommended_action"
+                ),
+            "recommendation":
+                recommendation.get(
+                    "recommendation"
+                ),
+            "alternative_start_time":
+                alternative_start,
+            "alternative_end_time":
+                alternative_end,
+        },
     }
 
 
@@ -687,10 +1016,6 @@ def create_maintenance_block(
 def get_maintenance_blocks(
     db: Session = Depends(get_db),
 ):
-    """
-    Return all saved maintenance blocks.
-    """
-
     blocks = (
         db.query(Block)
         .order_by(
@@ -706,23 +1031,36 @@ def get_maintenance_blocks(
 
         task_ids = [
             block_task.task_id
-            for block_task in block.block_tasks
+            for block_task
+            in block.block_tasks
         ]
 
         result.append(
             {
-                "block_id": block.block_id,
-                "block_code": block.block_code,
-                "section_id": block.section_id,
-                "block_date": block.block_date,
-                "start_time": block.start_time,
-                "end_time": block.end_time,
-                "reason": block.reason,
-                "status": block.status,
-                "replan_required": block.replan_required,
-                "recommended_start_time": block.recommended_start_time,
-                "recommended_end_time": block.recommended_end_time,
-                "task_ids": task_ids,
+                "block_id":
+                    block.block_id,
+                "block_code":
+                    block.block_code,
+                "section_id":
+                    block.section_id,
+                "block_date":
+                    block.block_date,
+                "start_time":
+                    block.start_time,
+                "end_time":
+                    block.end_time,
+                "reason":
+                    block.reason,
+                "status":
+                    block.status,
+                "replan_required":
+                    block.replan_required,
+                "recommended_start_time":
+                    block.recommended_start_time,
+                "recommended_end_time":
+                    block.recommended_end_time,
+                "task_ids":
+                    task_ids,
             }
         )
 
@@ -730,26 +1068,18 @@ def get_maintenance_blocks(
 
 
 # ============================================================
-# UPDATE MAINTENANCE BLOCK STATUS
+# UPDATE BLOCK STATUS
 # ============================================================
 
-@app.patch("/planner/blocks/{block_id}/status")
+@app.patch(
+    "/planner/blocks/{block_id}/status"
+)
 def update_block_status(
     block_id: int,
     new_status: str,
     db: Session = Depends(get_db),
+    current_user=Depends(require_admin),
 ):
-    """
-    Update the status of a maintenance block.
-
-    Allowed statuses:
-        PLANNED
-        APPROVED
-        IN_PROGRESS
-        COMPLETED
-        CANCELLED
-    """
-
     allowed_statuses = {
         "PLANNED",
         "APPROVED",
@@ -758,7 +1088,11 @@ def update_block_status(
         "CANCELLED",
     }
 
-    new_status = new_status.upper().strip()
+    new_status = (
+        new_status
+        .upper()
+        .strip()
+    )
 
     if new_status not in allowed_statuses:
         raise HTTPException(
@@ -770,14 +1104,11 @@ def update_block_status(
             ),
         )
 
-    # --------------------------------------------------------
-    # Find block
-    # --------------------------------------------------------
-
     block = (
         db.query(Block)
         .filter(
-            Block.block_id == block_id
+            Block.block_id
+            == block_id
         )
         .first()
     )
@@ -785,33 +1116,27 @@ def update_block_status(
     if block is None:
         raise HTTPException(
             status_code=404,
-            detail=f"Block {block_id} not found.",
+            detail=(
+                f"Block {block_id} not found."
+            ),
         )
 
     current_status = block.status
-
-    # --------------------------------------------------------
-    # Validate status transition
-    # --------------------------------------------------------
 
     allowed_transitions = {
         "PLANNED": {
             "APPROVED",
             "CANCELLED",
         },
-
         "APPROVED": {
             "IN_PROGRESS",
             "CANCELLED",
         },
-
         "IN_PROGRESS": {
             "COMPLETED",
             "CANCELLED",
         },
-
         "COMPLETED": set(),
-
         "CANCELLED": set(),
     }
 
@@ -827,45 +1152,39 @@ def update_block_status(
             raise HTTPException(
                 status_code=400,
                 detail=(
-                    f"Invalid status transition: "
+                    "Invalid status transition: "
                     f"{current_status} → {new_status}"
                 ),
             )
 
-    # --------------------------------------------------------
-    # Update block
-    # --------------------------------------------------------
-
     block.status = new_status
-
-    # --------------------------------------------------------
-    # Update related task statuses
-    # --------------------------------------------------------
 
     related_task_ids = [
         block_task.task_id
-        for block_task in block.block_tasks
+        for block_task
+        in block.block_tasks
     ]
 
-    tasks = (
-        db.query(MaintenanceTask)
-        .filter(
-            MaintenanceTask.task_id.in_(
-                related_task_ids
+    tasks = []
+
+    if related_task_ids:
+
+        tasks = (
+            db.query(
+                MaintenanceTask
             )
+            .filter(
+                MaintenanceTask.task_id.in_(
+                    related_task_ids
+                )
+            )
+            .all()
         )
-        .all()
-    )
 
-    if new_status == "APPROVED":
+    if new_status == "IN_PROGRESS":
 
         for task in tasks:
-            if task.status == "SCHEDULED":
-                task.status = "SCHEDULED"
 
-    elif new_status == "IN_PROGRESS":
-
-        for task in tasks:
             if task.status == "SCHEDULED":
                 task.status = "IN_PROGRESS"
 
@@ -877,49 +1196,106 @@ def update_block_status(
     elif new_status == "CANCELLED":
 
         for task in tasks:
+
             if task.status == "SCHEDULED":
                 task.status = "PENDING"
 
-    # --------------------------------------------------------
-    # Save changes
-    # --------------------------------------------------------
-
     db.commit()
+
+    clear_ai_cache()
+
     db.refresh(block)
 
     return {
-        "message": "Block status updated successfully",
+        "message":
+            "Block status updated successfully",
+
         "block": {
-            "block_id": block.block_id,
-            "block_code": block.block_code,
-            "section_id": block.section_id,
-            "block_date": block.block_date,
-            "start_time": block.start_time,
-            "end_time": block.end_time,
-            "status": block.status,
-            "task_ids": related_task_ids,
+            "block_id":
+                block.block_id,
+
+            "block_code":
+                block.block_code,
+
+            "section_id":
+                block.section_id,
+
+            "block_date":
+                block.block_date,
+
+            "start_time":
+                block.start_time,
+
+            "end_time":
+                block.end_time,
+
+            "status":
+                block.status,
+
+            "task_ids":
+                related_task_ids,
         },
     }
 
 
+# ============================================================
+# ALL BLOCK IMPACTS
+# ============================================================
+
+@app.get("/planner/blocks/impact")
+def get_all_block_impacts(
+    db: Session = Depends(get_db),
+):
+    results = analyze_all_blocks(
+        db=db
+    )
+
+    return {
+        "total_blocks":
+            len(results),
+        "blocks":
+            results,
+    }
+
 
 # ============================================================
-# ANALYZE SINGLE BLOCK TRAIN IMPACT
+# ALL BLOCK RECOMMENDATIONS
 # ============================================================
 
-@app.get("/planner/blocks/{block_id}/impact")
+@app.get("/planner/blocks/recommendations")
+def get_all_block_recommendations(
+    db: Session = Depends(get_db),
+):
+    results = (
+        recommend_rescheduling_for_all_blocks(
+            db=db
+        )
+    )
+
+    return {
+        "total_blocks":
+            len(results),
+        "recommendations":
+            results,
+    }
+
+
+# ============================================================
+# SINGLE BLOCK IMPACT
+# ============================================================
+
+@app.get(
+    "/planner/blocks/{block_id}/impact"
+)
 def get_block_impact(
     block_id: int,
     db: Session = Depends(get_db),
 ):
-    """
-    Analyze train conflicts for a single maintenance block.
-    """
-
     block = (
         db.query(Block)
         .filter(
-            Block.block_id == block_id
+            Block.block_id
+            == block_id
         )
         .first()
     )
@@ -927,7 +1303,9 @@ def get_block_impact(
     if block is None:
         raise HTTPException(
             status_code=404,
-            detail=f"Block {block_id} not found.",
+            detail=(
+                f"Block {block_id} not found."
+            ),
         )
 
     return analyze_block_impact(
@@ -937,45 +1315,21 @@ def get_block_impact(
 
 
 # ============================================================
-# ANALYZE ALL MAINTENANCE BLOCKS
+# SINGLE BLOCK RECOMMENDATION
 # ============================================================
 
-@app.get("/planner/blocks/impact")
-def get_all_block_impacts(
-    db: Session = Depends(get_db),
-):
-    """
-    Analyze train impact for all non-cancelled blocks.
-    """
-
-    results = analyze_all_blocks(
-        db=db
-    )
-
-    return {
-        "total_blocks": len(results),
-        "blocks": results,
-    }
-    
-
-# ============================================================
-# SINGLE BLOCK RESCHEDULING RECOMMENDATION
-# ============================================================
-
-@app.get("/planner/blocks/{block_id}/recommendation")
+@app.get(
+    "/planner/blocks/{block_id}/recommendation"
+)
 def get_block_recommendation(
     block_id: int,
     db: Session = Depends(get_db),
 ):
-    """
-    Analyze one block and provide a rescheduling
-    recommendation if required.
-    """
-
     block = (
         db.query(Block)
         .filter(
-            Block.block_id == block_id
+            Block.block_id
+            == block_id
         )
         .first()
     )
@@ -983,7 +1337,9 @@ def get_block_recommendation(
     if block is None:
         raise HTTPException(
             status_code=404,
-            detail=f"Block {block_id} not found.",
+            detail=(
+                f"Block {block_id} not found."
+            ),
         )
 
     return recommend_reschedule(
@@ -993,49 +1349,24 @@ def get_block_recommendation(
 
 
 # ============================================================
-# ALL BLOCK RESCHEDULING RECOMMENDATIONS
-# ============================================================
-
-@app.get("/planner/blocks/recommendations")
-def get_all_block_recommendations(
-    db: Session = Depends(get_db),
-):
-    """
-    Analyze all non-cancelled blocks and provide
-    rescheduling recommendations.
-    """
-
-    results = recommend_rescheduling_for_all_blocks(
-        db=db
-    )
-
-    return {
-        "total_blocks": len(results),
-        "recommendations": results,
-    }
-    
-
-# ============================================================
-# FINAL MAINTENANCE PLAN OPTIMIZATION
+# FINAL BLOCK OPTIMIZATION
 # ============================================================
 
 @app.get("/planner/optimization")
 def get_optimized_plans(
     db: Session = Depends(get_db),
 ):
-    """
-    Return optimized results for all non-cancelled
-    maintenance blocks.
-    """
-
     results = optimize_all_blocks(
         db=db
     )
 
     return {
-        "total_blocks": len(results),
-        "optimized_blocks": results,
+        "total_blocks":
+            len(results),
+        "optimized_blocks":
+            results,
     }
+
 
 # ============================================================
 # CREATE OPERATIONAL EVENT
@@ -1052,16 +1383,8 @@ def create_operational_event(
     delay_minutes: int | None = None,
     description: str | None = None,
     db: Session = Depends(get_db),
+    current_user=Depends(require_admin),
 ):
-    """
-    Create a new operational event.
-
-    Supported event types:
-        DEFECT
-        TRAIN_DELAY
-        BLOCK_CHANGE
-    """
-
     allowed_event_types = {
         "DEFECT",
         "TRAIN_DELAY",
@@ -1075,14 +1398,20 @@ def create_operational_event(
         "CRITICAL",
     }
 
-    event_type = event_type.upper().strip()
-    severity = severity.upper().strip()
+    event_type = (
+        event_type
+        .upper()
+        .strip()
+    )
 
-    # --------------------------------------------------------
-    # Normalize optional asset_id
-    # --------------------------------------------------------
+    severity = (
+        severity
+        .upper()
+        .strip()
+    )
 
     if asset_id is not None:
+
         asset_id = asset_id.strip()
 
         if asset_id.lower() in {
@@ -1092,82 +1421,86 @@ def create_operational_event(
             "none",
         }:
             asset_id = None
+
         else:
+
             try:
-                asset_id = int(asset_id)
+                asset_id = int(
+                    asset_id
+                )
+
             except ValueError:
                 raise HTTPException(
                     status_code=400,
-                    detail="asset_id must be a valid integer.",
+                    detail=(
+                        "asset_id must be a valid integer."
+                    ),
                 )
 
-    # --------------------------------------------------------
-    # Validate event type
-    # --------------------------------------------------------
-
     if event_type not in allowed_event_types:
+
         raise HTTPException(
             status_code=400,
             detail=(
-                f"Invalid event type '{event_type}'. "
+                f"Invalid event type "
+                f"'{event_type}'. "
                 f"Allowed types: "
                 f"{', '.join(sorted(allowed_event_types))}"
             ),
         )
 
-    # --------------------------------------------------------
-    # Validate severity
-    # --------------------------------------------------------
-
     if severity not in allowed_severities:
+
         raise HTTPException(
             status_code=400,
             detail=(
-                f"Invalid severity '{severity}'. "
+                f"Invalid severity "
+                f"'{severity}'. "
                 f"Allowed values: "
                 f"{', '.join(sorted(allowed_severities))}"
             ),
         )
 
-    # --------------------------------------------------------
-    # Validate section
-    # --------------------------------------------------------
-
     section = (
         db.query(Section)
         .filter(
-            Section.section_id == section_id
+            Section.section_id
+            == section_id
         )
         .first()
     )
 
     if section is None:
+
         raise HTTPException(
             status_code=404,
-            detail=f"Section {section_id} not found.",
+            detail=(
+                f"Section {section_id} not found."
+            ),
         )
-
-    # --------------------------------------------------------
-    # Validate asset
-    # --------------------------------------------------------
 
     if asset_id is not None:
 
         asset = (
             db.query(Asset)
             .filter(
-                Asset.asset_id == asset_id
+                Asset.asset_id
+                == asset_id
             )
             .first()
         )
 
         if asset is None:
+
             raise HTTPException(
                 status_code=404,
-                detail=f"Asset {asset_id} not found.",
+                detail=(
+                    f"Asset {asset_id} not found."
+                ),
             )
 
         if asset.section_id != section_id:
+
             raise HTTPException(
                 status_code=400,
                 detail=(
@@ -1176,33 +1509,30 @@ def create_operational_event(
                 ),
             )
 
-    # --------------------------------------------------------
-    # Validate train
-    # --------------------------------------------------------
-
     if train_id is not None:
 
         train = (
             db.query(Train)
             .filter(
-                Train.train_id == train_id
+                Train.train_id
+                == train_id
             )
             .first()
         )
 
         if train is None:
+
             raise HTTPException(
                 status_code=404,
-                detail=f"Train {train_id} not found.",
+                detail=(
+                    f"Train {train_id} not found."
+                ),
             )
-
-    # --------------------------------------------------------
-    # Event-specific validation
-    # --------------------------------------------------------
 
     if event_type == "DEFECT":
 
         if asset_id is None:
+
             raise HTTPException(
                 status_code=400,
                 detail=(
@@ -1214,6 +1544,7 @@ def create_operational_event(
     elif event_type == "TRAIN_DELAY":
 
         if train_id is None:
+
             raise HTTPException(
                 status_code=400,
                 detail=(
@@ -1222,18 +1553,18 @@ def create_operational_event(
                 ),
             )
 
-        if delay_minutes is None or delay_minutes <= 0:
+        if (
+            delay_minutes is None
+            or delay_minutes <= 0
+        ):
+
             raise HTTPException(
                 status_code=400,
                 detail=(
-                    "delay_minutes must be greater "
-                    "than 0 for TRAIN_DELAY events."
+                    "delay_minutes must be greater than 0 "
+                    "for TRAIN_DELAY events."
                 ),
             )
-
-    # --------------------------------------------------------
-    # Create event
-    # --------------------------------------------------------
 
     event = OperationalEvent(
         event_type=event_type,
@@ -1248,25 +1579,54 @@ def create_operational_event(
     )
 
     db.add(event)
+
     db.commit()
+
+    clear_ai_cache()
+
     db.refresh(event)
 
     return {
-        "message": "Operational event created successfully",
+        "message":
+            "Operational event created successfully",
+
         "event": {
-            "event_id": event.event_id,
-            "event_type": event.event_type,
-            "event_date": event.event_date,
-            "section_id": event.section_id,
-            "asset_id": event.asset_id,
-            "train_id": event.train_id,
-            "severity": event.severity,
-            "delay_minutes": event.delay_minutes,
-            "description": event.description,
-            "status": event.status,
-            "created_at": event.created_at,
+            "event_id":
+                event.event_id,
+
+            "event_type":
+                event.event_type,
+
+            "event_date":
+                event.event_date,
+
+            "section_id":
+                event.section_id,
+
+            "asset_id":
+                event.asset_id,
+
+            "train_id":
+                event.train_id,
+
+            "severity":
+                event.severity,
+
+            "delay_minutes":
+                event.delay_minutes,
+
+            "description":
+                event.description,
+
+            "status":
+                event.status,
+
+            "created_at":
+                event.created_at,
         },
     }
+
+
 # ============================================================
 # GET OPERATIONAL EVENTS
 # ============================================================
@@ -1275,12 +1635,10 @@ def create_operational_event(
 def get_operational_events(
     db: Session = Depends(get_db),
 ):
-    """
-    Return all operational events.
-    """
-
     events = (
-        db.query(OperationalEvent)
+        db.query(
+            OperationalEvent
+        )
         .order_by(
             OperationalEvent.created_at.desc()
         )
@@ -1289,34 +1647,715 @@ def get_operational_events(
 
     return [
         {
-            "event_id": event.event_id,
-            "event_type": event.event_type,
-            "event_date": event.event_date,
-            "section_id": event.section_id,
-            "asset_id": event.asset_id,
-            "train_id": event.train_id,
-            "severity": event.severity,
-            "delay_minutes": event.delay_minutes,
-            "description": event.description,
-            "status": event.status,
-            "created_at": event.created_at,
+            "event_id":
+                event.event_id,
+            "event_type":
+                event.event_type,
+            "event_date":
+                event.event_date,
+            "section_id":
+                event.section_id,
+            "asset_id":
+                event.asset_id,
+            "train_id":
+                event.train_id,
+            "severity":
+                event.severity,
+            "delay_minutes":
+                event.delay_minutes,
+            "description":
+                event.description,
+            "status":
+                event.status,
+            "created_at":
+                event.created_at,
         }
         for event in events
-    ]    
+    ]
+    
+# ============================================================
+# RESOLVE OPERATIONAL EVENT
+# ============================================================
+
+@app.patch("/events/{event_id}/resolve")
+def resolve_operational_event(
+    event_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_admin),
+):
+    event = (
+        db.query(OperationalEvent)
+        .filter(
+            OperationalEvent.event_id == event_id
+        )
+        .first()
+    )
+
+    if event is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Operational event {event_id} not found.",
+        )
+
+    if event.status == "RESOLVED":
+        return {
+            "message": f"Event {event_id} is already RESOLVED.",
+            "event_id": event_id,
+            "status": event.status,
+        }
+
+    event.status = "RESOLVED"
+
+    db.commit()
+
+    clear_ai_cache()
+
+    db.refresh(event)
+
+    return {
+        "message": "Operational event resolved successfully.",
+        "event_id": event.event_id,
+        "event_type": event.event_type,
+        "status": event.status,
+    }
 
 # ============================================================
 # TRIGGER DYNAMIC RE-PLANNING
 # ============================================================
 
-@app.post("/events/{event_id}/replan")
+@app.post(
+    "/events/{event_id}/replan"
+)
 def trigger_event_replanning(
     event_id: int,
     db: Session = Depends(get_db),
+    current_user=Depends(require_admin),
 ):
-    """
-    Trigger dynamic maintenance re-planning for an
-    operational event.
-    """
+    event = (
+        db.query(
+            OperationalEvent
+        )
+        .filter(
+            OperationalEvent.event_id
+            == event_id
+        )
+        .first()
+    )
+
+    if event is None:
+
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"Operational event "
+                f"{event_id} not found."
+            ),
+        )
+
+    if event.status != "OPEN":
+
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Event {event_id} is already "
+                f"{event.status}."
+            ),
+        )
+
+    try:
+
+        result = replan_after_event(
+            db=db,
+            event=event,
+        )
+
+        clear_ai_cache()
+
+    except ValueError as exc:
+
+        db.rollback()
+
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        )
+
+    except Exception as exc:
+
+        db.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Dynamic re-planning failed: "
+                f"{str(exc)}"
+            ),
+        )
+
+    return {
+        "message": (
+            "Dynamic re-planning completed successfully"
+        ),
+        "replanning_result":
+            result,
+    }
+
+
+# ============================================================
+# APPLY BLOCK-LEVEL REPLAN
+# ============================================================
+
+@app.post(
+    "/events/{event_id}/apply-replan"
+)
+def apply_recommended_replan(
+    event_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_admin),
+):
+    event = (
+        db.query(
+            OperationalEvent
+        )
+        .filter(
+            OperationalEvent.event_id
+            == event_id
+        )
+        .first()
+    )
+
+    if event is None:
+
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"Operational event "
+                f"{event_id} not found."
+            ),
+        )
+
+    if event.status != "OPEN":
+
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Event {event_id} is already "
+                f"{event.status}."
+            ),
+        )
+
+    try:
+
+        result = replan_after_event(
+            db=db,
+            event=event,
+        )
+
+    except ValueError as exc:
+
+        db.rollback()
+
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        )
+
+    except Exception as exc:
+
+        db.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Unable to calculate re-plan: "
+                f"{str(exc)}"
+            ),
+        )
+
+    if not isinstance(
+        result,
+        dict,
+    ):
+
+        db.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Re-planning engine returned "
+                "an invalid response."
+            ),
+        )
+
+    affected_blocks = (
+        result.get(
+            "affected_blocks",
+            [],
+        )
+    )
+
+    task_level_replan = (
+        result.get(
+            "replanned_tasks",
+            [],
+        )
+    )
+
+    applied_blocks = []
+    manual_review_blocks = []
+
+    # ========================================================
+    # PROCESS AFFECTED BLOCKS
+    # ========================================================
+
+    for block_result in affected_blocks:
+
+        if not isinstance(
+            block_result,
+            dict,
+        ):
+            continue
+
+        block_id = block_result.get(
+            "block_id"
+        )
+
+        if block_id is None:
+            continue
+
+        recommended_action = (
+            block_result.get(
+                "recommended_action"
+            )
+        )
+
+        if (
+            recommended_action
+            == "MANUAL_REVIEW"
+        ):
+
+            manual_review_blocks.append(
+                {
+                    "block_id":
+                        block_id,
+
+                    "block_code":
+                        block_result.get(
+                            "block_code"
+                        ),
+
+                    "reason": (
+                        block_result.get(
+                            "recommendation"
+                        )
+                        or
+                        "Manual review required."
+                    ),
+
+                    "conflict_count":
+                        block_result.get(
+                            "conflict_count",
+                            0,
+                        ),
+
+                    "affected_train_ids":
+                        block_result.get(
+                            "affected_train_ids",
+                            [],
+                        ),
+                }
+            )
+
+            continue
+
+        if (
+            recommended_action
+            == "KEEP_BLOCK"
+        ):
+            continue
+
+        if (
+            recommended_action
+            not in {
+                "RESCHEDULE",
+                "CONSIDER_RESCHEDULE",
+            }
+        ):
+            continue
+
+        alternative_start = (
+            block_result.get(
+                "alternative_start_time"
+            )
+        )
+
+        alternative_end = (
+            block_result.get(
+                "alternative_end_time"
+            )
+        )
+
+        if (
+            alternative_start
+            is None
+            or alternative_end
+            is None
+        ):
+
+            manual_review_blocks.append(
+                {
+                    "block_id":
+                        block_id,
+
+                    "block_code":
+                        block_result.get(
+                            "block_code"
+                        ),
+
+                    "reason": (
+                        "No valid safe alternative "
+                        "timing was returned."
+                    ),
+                }
+            )
+
+            continue
+
+        block = (
+            db.query(Block)
+            .filter(
+                Block.block_id
+                == block_id
+            )
+            .first()
+        )
+
+        if block is None:
+
+            manual_review_blocks.append(
+                {
+                    "block_id":
+                        block_id,
+
+                    "block_code":
+                        block_result.get(
+                            "block_code"
+                        ),
+
+                    "reason": (
+                        "Referenced maintenance "
+                        "block was not found."
+                    ),
+                }
+            )
+
+            continue
+
+        new_start_minutes = (
+            alternative_start.hour * 60
+            + alternative_start.minute
+        )
+
+        new_end_minutes = (
+            alternative_end.hour * 60
+            + alternative_end.minute
+        )
+
+        if (
+            new_start_minutes
+            >= new_end_minutes
+        ):
+
+            manual_review_blocks.append(
+                {
+                    "block_id":
+                        block_id,
+
+                    "block_code":
+                        block.block_code,
+
+                    "reason": (
+                        "Recommended block timing "
+                        "is invalid."
+                    ),
+                }
+            )
+
+            continue
+
+        other_blocks = (
+            db.query(Block)
+            .filter(
+                Block.section_id
+                == block.section_id,
+                Block.block_date
+                == block.block_date,
+                Block.block_id
+                != block.block_id,
+                Block.status
+                != "CANCELLED",
+            )
+            .all()
+        )
+
+        overlap_found = False
+
+        for other_block in other_blocks:
+
+            other_start = (
+                other_block.start_time.hour
+                * 60
+                + other_block.start_time.minute
+            )
+
+            other_end = (
+                other_block.end_time.hour
+                * 60
+                + other_block.end_time.minute
+            )
+
+            if (
+                new_start_minutes
+                < other_end
+                and other_start
+                < new_end_minutes
+            ):
+
+                overlap_found = True
+
+                manual_review_blocks.append(
+                    {
+                        "block_id":
+                            block_id,
+
+                        "block_code":
+                            block.block_code,
+
+                        "reason": (
+                            "Recommended timing overlaps "
+                            "another active maintenance block."
+                        ),
+
+                        "conflicting_block_id":
+                            other_block.block_id,
+
+                        "conflicting_block_code":
+                            other_block.block_code,
+                    }
+                )
+
+                break
+
+        if overlap_found:
+            continue
+
+        # -----------------------------------------------------
+        # FINAL TRAIN SAFETY CHECK
+        # -----------------------------------------------------
+
+        original_start = block.start_time
+        original_end = block.end_time
+
+        block.start_time = (
+            alternative_start
+        )
+
+        block.end_time = (
+            alternative_end
+        )
+
+        try:
+
+            safety_impact = (
+                analyze_block_impact(
+                    db=db,
+                    block=block,
+                )
+            )
+
+        finally:
+
+            block.start_time = (
+                original_start
+            )
+
+            block.end_time = (
+                original_end
+            )
+
+        if (
+            safety_impact.get(
+                "conflict_count",
+                0,
+            )
+            > 0
+        ):
+
+            manual_review_blocks.append(
+                {
+                    "block_id":
+                        block_id,
+
+                    "block_code":
+                        block.block_code,
+
+                    "reason": (
+                        "Recommended timing still has "
+                        "a train conflict after final "
+                        "safety validation."
+                    ),
+
+                    "conflict_count":
+                        safety_impact.get(
+                            "conflict_count",
+                            0,
+                        ),
+
+                    "affected_train_ids":
+                        safety_impact.get(
+                            "affected_train_ids",
+                            [],
+                        ),
+                }
+            )
+
+            continue
+
+        # -----------------------------------------------------
+        # APPLY
+        # -----------------------------------------------------
+
+        old_start = block.start_time
+        old_end = block.end_time
+
+        block.start_time = (
+            alternative_start
+        )
+
+        block.end_time = (
+            alternative_end
+        )
+
+        block.replan_required = False
+
+        block.recommended_start_time = (
+            alternative_start
+        )
+
+        block.recommended_end_time = (
+            alternative_end
+        )
+
+        applied_blocks.append(
+            {
+                "block_id":
+                    block.block_id,
+
+                "block_code":
+                    block.block_code,
+
+                "old_start_time":
+                    old_start,
+
+                "old_end_time":
+                    old_end,
+
+                "new_start_time":
+                    block.start_time,
+
+                "new_end_time":
+                    block.end_time,
+            }
+        )
+
+    # ========================================================
+    # COMMIT ONLY WHEN SOMETHING WAS APPLIED
+    # ========================================================
+
+    if applied_blocks:
+
+        event.status = "RESOLVED"
+
+        db.commit()
+
+        clear_ai_cache()
+
+        return {
+            "message": (
+                "Recommended maintenance plan "
+                "applied successfully."
+            ),
+
+            "event_id":
+                event_id,
+
+            "event_status":
+                "RESOLVED",
+
+            "applied_blocks":
+                applied_blocks,
+
+            "manual_review_blocks":
+                manual_review_blocks,
+
+            "task_level_replan":
+                task_level_replan,
+
+            "replanning_required":
+                len(
+                    manual_review_blocks
+                ) > 0,
+
+            "event_action":
+                "REPLAN_APPLIED",
+        }
+
+    db.rollback()
+
+    return {
+        "message": (
+            "No safe whole-block timing could "
+            "be applied. The event remains OPEN "
+            "for manual review."
+        ),
+
+        "event_id":
+            event_id,
+
+        "event_status":
+            "OPEN",
+
+        "applied_blocks": [],
+
+        "manual_review_blocks":
+            manual_review_blocks,
+
+        "task_level_replan":
+            task_level_replan,
+
+        "replanning_required":
+            True,
+
+        "event_action":
+            "MANUAL_REVIEW",
+    }
+
+
+# ============================================================
+# APPLY TASK-LEVEL REPLANNING
+# ============================================================
+
+@app.post(
+    "/events/{event_id}/apply-task-replan"
+)
+def apply_task_level_replan(
+    event_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_admin),
+):
+    # ========================================================
+    # 1. GET EVENT
+    # ========================================================
 
     event = (
         db.query(OperationalEvent)
@@ -1341,140 +2380,1168 @@ def trigger_event_replanning(
             ),
         )
 
-    result = replan_after_event(
-        db=db,
-        event=event,
-    )
+    # ========================================================
+    # 2. GENERATE AI TASK-LEVEL REPLAN
+    # ========================================================
 
-    return {
-        "message": "Dynamic re-planning completed successfully",
-        "replanning_result": result,
-    }
-    
-# ============================================================
-# APPLY RECOMMENDED RE-PLANNING
-# ============================================================
-
-@app.post("/events/{event_id}/apply-replan")
-def apply_recommended_replan(
-    event_id: int,
-    db: Session = Depends(get_db),
-):
-    """
-    Apply the recommended maintenance block window
-    generated by dynamic re-planning.
-    """
-
-    event = (
-        db.query(OperationalEvent)
-        .filter(
-            OperationalEvent.event_id == event_id
+    try:
+        result = replan_after_event(
+            db=db,
+            event=event,
         )
-        .first()
-    )
 
-    if event is None:
+    except ValueError as exc:
+        db.rollback()
+
         raise HTTPException(
-            status_code=404,
-            detail=f"Operational event {event_id} not found.",
+            status_code=400,
+            detail=str(exc),
         )
 
-    # Recalculate latest recommendation
-    result = replan_after_event(
-        db=db,
-        event=event,
+    except Exception as exc:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Unable to calculate task-level "
+                f"re-plan: {str(exc)}"
+            ),
+        )
+
+    if not isinstance(result, dict):
+        db.rollback()
+
+        return {
+            "message": (
+                "AI task-level re-planning "
+                "returned an invalid result."
+            ),
+            "event_id": event_id,
+            "event_status": "OPEN",
+            "created_blocks": [],
+            "cancelled_blocks": [],
+            "manual_review_tasks": [],
+            "replanning_required": True,
+            "event_action": "MANUAL_REVIEW",
+        }
+
+    task_level_replan = result.get(
+        "replanned_tasks",
+        [],
     )
 
-    applied_blocks = []
+    if not task_level_replan:
+        db.rollback()
 
-    for block_result in result["affected_blocks"]:
+        return {
+            "message": (
+                "No AI task-level re-planning "
+                "recommendation is available."
+            ),
+            "event_id": event_id,
+            "event_status": "OPEN",
+            "created_blocks": [],
+            "cancelled_blocks": [],
+            "manual_review_tasks": [],
+            "replanning_required": True,
+            "event_action": "MANUAL_REVIEW",
+        }
+
+    # ========================================================
+    # 3. EXTRACT AI REPLANNED TASK IDS
+    # ========================================================
+
+    replanned_task_ids = set()
+
+    for plan in task_level_replan:
+
+        if not isinstance(plan, dict):
+            continue
+
+        task_id = plan.get("task_id")
+
+        if task_id is not None:
+            replanned_task_ids.add(int(task_id))
+
+    if not replanned_task_ids:
+        db.rollback()
+
+        return {
+            "message": (
+                "AI generated task-level plans, "
+                "but no valid task IDs were found."
+            ),
+            "event_id": event_id,
+            "event_status": "OPEN",
+            "created_blocks": [],
+            "cancelled_blocks": [],
+            "manual_review_tasks": [],
+            "task_level_replan": task_level_replan,
+            "replanning_required": True,
+            "event_action": "MANUAL_REVIEW",
+        }
+
+    # ========================================================
+    # 4. LOAD TASKS
+    # ========================================================
+
+    tasks = (
+        db.query(MaintenanceTask)
+        .filter(
+            MaintenanceTask.task_id.in_(
+                list(replanned_task_ids)
+            )
+        )
+        .all()
+    )
+
+    task_by_id = {
+        task.task_id: task
+        for task in tasks
+    }
+
+    missing_task_ids = (
+        replanned_task_ids
+        - set(task_by_id.keys())
+    )
+
+    if missing_task_ids:
+        db.rollback()
+
+        return {
+            "message": (
+                "One or more AI replanned "
+                "maintenance tasks could not be found."
+            ),
+            "event_id": event_id,
+            "event_status": "OPEN",
+            "created_blocks": [],
+            "cancelled_blocks": [],
+            "manual_review_tasks": [
+                {
+                    "task_id": task_id,
+                    "reason": (
+                        "Maintenance task not found."
+                    ),
+                }
+                for task_id in sorted(missing_task_ids)
+            ],
+            "task_level_replan": task_level_replan,
+            "replanning_required": True,
+            "event_action": "MANUAL_REVIEW",
+        }
+
+    # ========================================================
+    # 5. FIND CURRENT ACTIVE BLOCKS
+    #
+    # IMPORTANT:
+    # Do NOT depend only on result["affected_blocks"].
+    #
+    # We directly search BlockTask relationships using the
+    # AI-replanned task IDs.
+    # ========================================================
+
+    active_links = (
+        db.query(BlockTask)
+        .join(
+            Block,
+            Block.block_id == BlockTask.block_id,
+        )
+        .filter(
+            BlockTask.task_id.in_(
+                list(replanned_task_ids)
+            ),
+            Block.status != "CANCELLED",
+        )
+        .all()
+    )
+
+    affected_block_ids = {
+        link.block_id
+        for link in active_links
+    }
+
+    affected_blocks_db = []
+
+    if affected_block_ids:
+        affected_blocks_db = (
+            db.query(Block)
+            .filter(
+                Block.block_id.in_(
+                    list(affected_block_ids)
+                )
+            )
+            .all()
+        )
+
+    # ========================================================
+    # 6. CHECK BLOCK STATUS
+    # ========================================================
+
+    blocked_blocks = []
+
+    for block in affected_blocks_db:
+
+        if block.status in {
+            "IN_PROGRESS",
+            "COMPLETED",
+        }:
+
+            blocked_blocks.append(
+                {
+                    "block_id": block.block_id,
+                    "block_code": block.block_code,
+                    "status": block.status,
+                }
+            )
+
+    if blocked_blocks:
+        db.rollback()
+
+        return {
+            "message": (
+                "Task-level automatic re-planning "
+                "cannot modify an IN_PROGRESS or "
+                "COMPLETED block."
+            ),
+            "event_id": event_id,
+            "event_status": "OPEN",
+            "created_blocks": [],
+            "cancelled_blocks": [],
+            "manual_review_tasks": [],
+            "blocked_blocks": blocked_blocks,
+            "task_level_replan": task_level_replan,
+            "replanning_required": True,
+            "event_action": "MANUAL_REVIEW",
+        }
+
+    # ========================================================
+    # 7. PARSE TIME
+    # ========================================================
+
+    def parse_time_value(value):
+
+        if value is None:
+            return None
 
         if (
-            block_result["recommended_action"]
-            not in {
-                "RESCHEDULE",
-                "CONSIDER_RESCHEDULE",
-            }
+            hasattr(value, "hour")
+            and hasattr(value, "minute")
+        ):
+            return value
+
+        if isinstance(value, str):
+
+            for time_format in (
+                "%H:%M",
+                "%H:%M:%S",
+            ):
+
+                try:
+                    return datetime.strptime(
+                        value,
+                        time_format,
+                    ).time()
+
+                except ValueError:
+                    continue
+
+        return None
+
+    # ========================================================
+    # 8. NORMALIZE AI PLANS
+    # ========================================================
+
+    normalized_plans = {}
+
+    for plan in task_level_replan:
+
+        if not isinstance(plan, dict):
+            continue
+
+        task_id = plan.get("task_id")
+
+        if task_id is None:
+            continue
+
+        task_id = int(task_id)
+
+        if task_id not in replanned_task_ids:
+            continue
+
+        start_time = parse_time_value(
+            plan.get("start_time")
+        )
+
+        end_time = parse_time_value(
+            plan.get("end_time")
+        )
+
+        if (
+            start_time is None
+            or end_time is None
         ):
             continue
+
+        normalized_plans[task_id] = {
+            "task_id": task_id,
+
+            "task_code": plan.get(
+                "task_code"
+            ),
+
+            "section_id": plan.get(
+                "section_id"
+            ),
+
+            "start_time": start_time,
+
+            "end_time": end_time,
+
+            "duration_hours": plan.get(
+                "duration_hours"
+            ),
+
+            "priority": plan.get(
+                "priority"
+            ),
+
+            "priority_score": plan.get(
+                "priority_score"
+            ),
+
+            "ml_risk_percentage": plan.get(
+                "ml_risk_percentage"
+            ),
+
+            "ml_risk_level": plan.get(
+                "ml_risk_level"
+            ),
+
+            "combined_risk_score": plan.get(
+                "combined_risk_score"
+            ),
+
+            "planning_score": plan.get(
+                "planning_score"
+            ),
+        }
+
+    # ========================================================
+    # 9. CHECK MISSING AI WINDOWS
+    # ========================================================
+
+    manual_review_tasks = []
+
+    for task_id in sorted(
+        replanned_task_ids
+    ):
+
+        if task_id not in normalized_plans:
+
+            task = task_by_id.get(
+                task_id
+            )
+
+            manual_review_tasks.append(
+                {
+                    "task_id": task_id,
+
+                    "task_code": (
+                        task.task_code
+                        if task is not None
+                        else None
+                    ),
+
+                    "reason": (
+                        "No valid AI task-level "
+                        "safe window was generated."
+                    ),
+                }
+            )
+
+    if manual_review_tasks:
+        db.rollback()
+
+        return {
+            "message": (
+                "Task-level re-planning is incomplete. "
+                "Manual review is required."
+            ),
+
+            "event_id": event_id,
+
+            "event_status": "OPEN",
+
+            "created_blocks": [],
+
+            "cancelled_blocks": [],
+
+            "manual_review_tasks":
+                manual_review_tasks,
+
+            "task_level_replan":
+                task_level_replan,
+
+            "replanning_required": True,
+
+            "event_action":
+                "MANUAL_REVIEW",
+        }
+
+    # ========================================================
+    # 10. SORT PLANS
+    # ========================================================
+
+    plan_items = list(
+        normalized_plans.values()
+    )
+
+    plan_items.sort(
+        key=lambda item: (
+            item["start_time"],
+            item["end_time"],
+        )
+    )
+
+    # ========================================================
+    # 11. VALIDATE TIME WINDOWS
+    # ========================================================
+
+    for plan in plan_items:
+
+        start_minutes = (
+            plan["start_time"].hour * 60
+            + plan["start_time"].minute
+        )
+
+        end_minutes = (
+            plan["end_time"].hour * 60
+            + plan["end_time"].minute
+        )
+
+        if start_minutes >= end_minutes:
+
+            db.rollback()
+
+            return {
+                "message": (
+                    "Invalid AI task-level "
+                    "timing detected."
+                ),
+
+                "event_id": event_id,
+
+                "event_status": "OPEN",
+
+                "created_blocks": [],
+
+                "cancelled_blocks": [],
+
+                "manual_review_tasks": [],
+
+                "task_level_replan":
+                    task_level_replan,
+
+                "replanning_required": True,
+
+                "event_action":
+                    "MANUAL_REVIEW",
+            }
+
+    # ========================================================
+    # 12. VALIDATE OVERLAPPING AI WINDOWS
+    # ========================================================
+
+    for index in range(
+        len(plan_items) - 1
+    ):
+
+        current_plan = plan_items[index]
+        next_plan = plan_items[index + 1]
+
+        current_end = (
+            current_plan["end_time"].hour * 60
+            + current_plan["end_time"].minute
+        )
+
+        next_start = (
+            next_plan["start_time"].hour * 60
+            + next_plan["start_time"].minute
+        )
+
+        if current_end > next_start:
+
+            db.rollback()
+
+            return {
+                "message": (
+                    "AI-generated task windows "
+                    "overlap each other."
+                ),
+
+                "event_id": event_id,
+
+                "event_status": "OPEN",
+
+                "created_blocks": [],
+
+                "cancelled_blocks": [],
+
+                "manual_review_tasks": [],
+
+                "task_level_replan":
+                    task_level_replan,
+
+                "replanning_required": True,
+
+                "event_action":
+                    "MANUAL_REVIEW",
+            }
+
+    # ========================================================
+    # 13. CHECK TASK DUPLICATES IN OTHER ACTIVE BLOCKS
+    # ========================================================
+
+    for task_id in replanned_task_ids:
+
+        duplicate_links = (
+            db.query(BlockTask)
+            .join(
+                Block,
+                Block.block_id
+                == BlockTask.block_id,
+            )
+            .filter(
+                BlockTask.task_id == task_id,
+
+                Block.status != "CANCELLED",
+
+                ~Block.block_id.in_(
+                    list(affected_block_ids)
+                )
+                if affected_block_ids
+                else True
+            )
+            .all()
+        )
+
+        if duplicate_links:
+
+            conflicting_blocks = [
+                link.block_id
+                for link in duplicate_links
+            ]
+
+            db.rollback()
+
+            return {
+                "message": (
+                    "A task is already attached "
+                    "to another active maintenance block."
+                ),
+
+                "event_id": event_id,
+
+                "event_status": "OPEN",
+
+                "created_blocks": [],
+
+                "cancelled_blocks": [],
+
+                "manual_review_tasks": [
+                    {
+                        "task_id": task_id,
+
+                        "task_code": (
+                            task_by_id[
+                                task_id
+                            ].task_code
+                        ),
+
+                        "reason": (
+                            "Task already exists "
+                            "in another active block."
+                        ),
+
+                        "conflicting_block_ids":
+                            conflicting_blocks,
+                    }
+                ],
+
+                "replanning_required": True,
+
+                "event_action":
+                    "MANUAL_REVIEW",
+            }
+
+    # ========================================================
+    # 14. CANCEL OLD BLOCKS
+    # ========================================================
+
+    cancelled_blocks = []
+
+    for block in affected_blocks_db:
+
+        old_status = block.status
+
+        block.status = "CANCELLED"
+
+        block.replan_required = False
+
+        for block_task in block.block_tasks:
+
+            task = task_by_id.get(
+                block_task.task_id
+            )
+
+            if (
+                task is not None
+                and task.status == "SCHEDULED"
+            ):
+                task.status = "PENDING"
+
+        cancelled_blocks.append(
+            {
+                "block_id":
+                    block.block_id,
+
+                "block_code":
+                    block.block_code,
+
+                "old_status":
+                    old_status,
+
+                "new_status":
+                    "CANCELLED",
+            }
+        )
+
+    db.flush()
+
+    # ========================================================
+    # 15. UNIQUE BLOCK CODE
+    # ========================================================
+
+    def generate_block_code(
+        block_date_value
+    ):
+
+        existing_codes = {
+            block.block_code
+            for block in (
+                db.query(Block)
+                .filter(
+                    Block.block_date
+                    == block_date_value
+                )
+                .all()
+            )
+        }
+
+        counter = 1
+
+        while True:
+
+            candidate = (
+                f"BLK-"
+                f"{block_date_value.strftime('%Y%m%d')}-"
+                f"{counter:03d}"
+            )
+
+            if candidate not in existing_codes:
+
+                return candidate
+
+            counter += 1
+
+    # ========================================================
+    # 16. CREATE NEW TASK-LEVEL BLOCKS
+    # ========================================================
+
+    created_blocks = []
+
+    for plan in plan_items:
+
+        task_id = plan["task_id"]
+
+        task = task_by_id[task_id]
+
+        # ----------------------------------------------------
+        # Ensure task belongs to event section
+        # ----------------------------------------------------
+
+        if task.section_id != event.section_id:
+
+            db.rollback()
+
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Task {task.task_code} "
+                    f"does not belong to event "
+                    f"section {event.section_id}."
+                ),
+            )
+
+        block_date = event.event_date
+
+        start_time = plan["start_time"]
+
+        end_time = plan["end_time"]
+
+        # ----------------------------------------------------
+        # Check active block overlap
+        # ----------------------------------------------------
+
+        active_blocks = (
+            db.query(Block)
+            .filter(
+                Block.section_id
+                == task.section_id,
+
+                Block.block_date
+                == block_date,
+
+                Block.status != "CANCELLED",
+            )
+            .all()
+        )
+
+        new_start_minutes = (
+            start_time.hour * 60
+            + start_time.minute
+        )
+
+        new_end_minutes = (
+            end_time.hour * 60
+            + end_time.minute
+        )
+
+        overlap_found = False
+
+        for existing_block in active_blocks:
+
+            existing_start = (
+                existing_block.start_time.hour * 60
+                + existing_block.start_time.minute
+            )
+
+            existing_end = (
+                existing_block.end_time.hour * 60
+                + existing_block.end_time.minute
+            )
+
+            if (
+                new_start_minutes < existing_end
+                and existing_start < new_end_minutes
+            ):
+
+                overlap_found = True
+
+                break
+
+        if overlap_found:
+
+            db.rollback()
+
+            return {
+                "message": (
+                    "AI task-level window conflicts "
+                    "with another active maintenance block."
+                ),
+
+                "event_id": event_id,
+
+                "event_status": "OPEN",
+
+                "created_blocks": [],
+
+                "cancelled_blocks": [],
+
+                "manual_review_tasks": [
+                    {
+                        "task_id": task_id,
+
+                        "task_code":
+                            task.task_code,
+
+                        "start_time":
+                            start_time,
+
+                        "end_time":
+                            end_time,
+
+                        "reason": (
+                            "Recommended task window "
+                            "overlaps another active block."
+                        ),
+                    }
+                ],
+
+                "replanning_required": True,
+
+                "event_action":
+                    "MANUAL_REVIEW",
+            }
+
+        # ----------------------------------------------------
+        # Create unique block code
+        # ----------------------------------------------------
+
+        block_code = generate_block_code(
+            block_date
+        )
+
+        new_block = Block(
+            block_code=block_code,
+
+            section_id=task.section_id,
+
+            block_date=block_date,
+
+            start_time=start_time,
+
+            end_time=end_time,
+
+            reason=(
+                "AI dynamic task-level "
+                f"re-planning for event "
+                f"{event_id} - "
+                f"{task.task_code}"
+            ),
+
+            status="PLANNED",
+
+            replan_required=False,
+
+            recommended_start_time=None,
+
+            recommended_end_time=None,
+        )
+
+        db.add(new_block)
+
+        db.flush()
+
+        # ----------------------------------------------------
+        # Attach task
+        # ----------------------------------------------------
+
+        db.add(
+            BlockTask(
+                block_id=
+                    new_block.block_id,
+
+                task_id=
+                    task_id,
+            )
+        )
+
+        task.status = "SCHEDULED"
+
+        db.flush()
+
+        # ----------------------------------------------------
+        # Final train safety validation
+        # ----------------------------------------------------
+
+        impact = analyze_block_impact(
+            db=db,
+            block=new_block,
+        )
+
+        if (
+            impact.get(
+                "conflict_count",
+                0,
+            ) > 0
+        ):
+
+            db.rollback()
+
+            return {
+                "message": (
+                    "AI task-level plan failed "
+                    "final train safety validation."
+                ),
+
+                "event_id": event_id,
+
+                "event_status": "OPEN",
+
+                "created_blocks": [],
+
+                "cancelled_blocks": [],
+
+                "manual_review_tasks": [
+                    {
+                        "task_id":
+                            task_id,
+
+                        "task_code":
+                            task.task_code,
+
+                        "start_time":
+                            start_time,
+
+                        "end_time":
+                            end_time,
+
+                        "conflict_count":
+                            impact.get(
+                                "conflict_count",
+                                0,
+                            ),
+
+                        "affected_train_ids":
+                            impact.get(
+                                "affected_train_ids",
+                                [],
+                            ),
+
+                        "reason": (
+                            "Recommended task window "
+                            "still conflicts with "
+                            "train operations."
+                        ),
+                    }
+                ],
+
+                "replanning_required":
+                    True,
+
+                "event_action":
+                    "MANUAL_REVIEW",
+            }
+
+        created_blocks.append(
+            {
+                "block_id":
+                    new_block.block_id,
+
+                "block_code":
+                    new_block.block_code,
+
+                "task_id":
+                    task.task_id,
+
+                "task_code":
+                    task.task_code,
+
+                "section_id":
+                    new_block.section_id,
+
+                "block_date":
+                    new_block.block_date,
+
+                "start_time":
+                    new_block.start_time,
+
+                "end_time":
+                    new_block.end_time,
+
+                "duration_hours":
+                    plan.get(
+                        "duration_hours"
+                    ),
+
+                "priority":
+                    plan.get(
+                        "priority"
+                    ),
+
+                "priority_score":
+                    plan.get(
+                        "priority_score"
+                    ),
+
+                "ml_risk_percentage":
+                    plan.get(
+                        "ml_risk_percentage"
+                    ),
+
+                "ml_risk_level":
+                    plan.get(
+                        "ml_risk_level"
+                    ),
+
+                "combined_risk_score":
+                    plan.get(
+                        "combined_risk_score"
+                    ),
+
+                "planning_score":
+                    plan.get(
+                        "planning_score"
+                    ),
+
+                "conflict_count":
+                    impact.get(
+                        "conflict_count",
+                        0,
+                    ),
+
+                "affected_train_ids":
+                    impact.get(
+                        "affected_train_ids",
+                        [],
+                    ),
+            }
+        )
+
+    # ========================================================
+    # 17. FINAL VALIDATION
+    # ========================================================
+
+    for created in created_blocks:
 
         block = (
             db.query(Block)
             .filter(
                 Block.block_id
-                == block_result["block_id"]
+                == created["block_id"]
             )
             .first()
         )
 
         if block is None:
-            continue
 
-        alternative_start = (
-            block_result["alternative_start_time"]
-        )
+            db.rollback()
 
-        alternative_end = (
-            block_result["alternative_end_time"]
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    "Created task-level block "
+                    "could not be reloaded."
+                ),
+            )
+
+        final_impact = analyze_block_impact(
+            db=db,
+            block=block,
         )
 
         if (
-            alternative_start is None
-            or alternative_end is None
+            final_impact.get(
+                "conflict_count",
+                0,
+            ) > 0
         ):
-            continue
 
-        # Save recommendation fields
-        block.replan_required = False
-        block.recommended_start_time = (
-            alternative_start
-        )
-        block.recommended_end_time = (
-            alternative_end
-        )
+            db.rollback()
 
-        # Apply new block timing
-        block.start_time = alternative_start
-        block.end_time = alternative_end
+            return {
+                "message": (
+                    "Final safety validation failed. "
+                    "No task-level changes were committed."
+                ),
 
-        applied_blocks.append(
-            {
-                "block_id": block.block_id,
-                "block_code": block.block_code,
-                "new_start_time": block.start_time,
-                "new_end_time": block.end_time,
+                "event_id": event_id,
+
+                "event_status": "OPEN",
+
+                "created_blocks": [],
+
+                "cancelled_blocks": [],
+
+                "manual_review_tasks": [
+                    {
+                        "task_id":
+                            created.get(
+                                "task_id"
+                            ),
+
+                        "task_code":
+                            created.get(
+                                "task_code"
+                            ),
+
+                        "conflict_count":
+                            final_impact.get(
+                                "conflict_count",
+                                0,
+                            ),
+
+                        "affected_train_ids":
+                            final_impact.get(
+                                "affected_train_ids",
+                                [],
+                            ),
+
+                        "reason": (
+                            "Final train-safety "
+                            "validation failed."
+                        ),
+                    }
+                ],
+
+                "replanning_required":
+                    True,
+
+                "event_action":
+                    "MANUAL_REVIEW",
             }
-        )
-    # Apply recommended block changes
-    # ...
 
-    event.status = "RESOLVED"    
+    # ========================================================
+    # 18. RESOLVE EVENT
+    # ========================================================
+
+    event.status = "RESOLVED"
 
     db.commit()
 
+    # Clear AI cache because block/task/event state changed
+    clear_ai_cache()
+
     return {
-        "message": "Recommended maintenance plan applied successfully",
-        "event_id": event_id,
-        "applied_blocks": applied_blocks,
-    }    
+        "message": (
+            "AI task-level re-planning "
+            "applied successfully."
+        ),
+
+        "event_id":
+            event_id,
+
+        "event_status":
+            "RESOLVED",
+
+        "cancelled_blocks":
+            cancelled_blocks,
+
+        "created_blocks":
+            created_blocks,
+
+        "manual_review_tasks":
+            [],
+
+        "task_level_replan":
+            task_level_replan,
+
+        "replanning_required":
+            False,
+
+        "event_action":
+            "TASK_LEVEL_REPLAN_APPLIED",
+    }
 
 # ============================================================
 # AI ASSET RISK — SINGLE ASSET
 # ============================================================
 
-@app.get("/ai/risk/assets/{asset_id}")
+@app.get(
+    "/ai/risk/assets/{asset_id}"
+)
 def get_asset_risk(
     asset_id: int,
     db: Session = Depends(get_db),
 ):
-    """
-    Calculate maintenance risk for a single asset.
-    """
-
     asset = (
         db.query(Asset)
         .filter(
-            Asset.asset_id == asset_id
+            Asset.asset_id
+            == asset_id
         )
         .first()
     )
@@ -1482,7 +3549,9 @@ def get_asset_risk(
     if asset is None:
         raise HTTPException(
             status_code=404,
-            detail=f"Asset {asset_id} not found.",
+            detail=(
+                f"Asset {asset_id} not found."
+            ),
         )
 
     return calculate_asset_risk(
@@ -1499,19 +3568,43 @@ def get_asset_risk(
 def get_all_asset_risks(
     db: Session = Depends(get_db),
 ):
-    """
-    Calculate maintenance risk for all active assets.
-    """
+    cached = get_cached_ai(
+        "asset_risks"
+    )
+
+    if cached is not None:
+        return {
+            "total_assets":
+                len(cached),
+
+            "assets":
+                cached,
+
+            "cached":
+                True,
+        }
 
     results = calculate_all_asset_risks(
         db=db
     )
 
+    set_cached_ai(
+        "asset_risks",
+        results,
+    )
+
     return {
-        "total_assets": len(results),
-        "assets": results,
+        "total_assets":
+            len(results),
+
+        "assets":
+            results,
+
+        "cached":
+            False,
     }
-    
+
+
 # ============================================================
 # AI SMART MAINTENANCE PRIORITY
 # ============================================================
@@ -1520,22 +3613,42 @@ def get_all_asset_risks(
 def get_smart_maintenance_priority(
     db: Session = Depends(get_db),
 ):
-    """
-    Calculate smart maintenance priority for all active tasks.
+    cached = get_cached_ai(
+        "smart_priorities"
+    )
 
-    Combines:
-        - Existing maintenance priority
-        - AI asset risk
-    """
+    if cached is not None:
+        return {
+            "total_tasks":
+                len(cached),
+
+            "tasks":
+                cached,
+
+            "cached":
+                True,
+        }
 
     results = calculate_all_smart_priorities(
         db=db
     )
 
+    set_cached_ai(
+        "smart_priorities",
+        results,
+    )
+
     return {
-        "total_tasks": len(results),
-        "tasks": results,
-    }    
+        "total_tasks":
+            len(results),
+
+        "tasks":
+            results,
+
+        "cached":
+            False,
+    }
+
 
 # ============================================================
 # AI MAINTENANCE DECISIONS
@@ -1545,21 +3658,43 @@ def get_smart_maintenance_priority(
 def get_ai_maintenance_decisions(
     db: Session = Depends(get_db),
 ):
-    """
-    Generate AI-assisted maintenance decisions
-    for all active maintenance tasks.
-    """
+    cached = get_cached_ai(
+        "decisions"
+    )
+
+    if cached is not None:
+        return {
+            "total_tasks":
+                len(cached),
+
+            "decisions":
+                cached,
+
+            "cached":
+                True,
+        }
 
     results = calculate_all_ai_decisions(
         db=db
     )
 
+    set_cached_ai(
+        "decisions",
+        results,
+    )
+
     return {
-        "total_tasks": len(results),
-        "decisions": results,
+        "total_tasks":
+            len(results),
+
+        "decisions":
+            results,
+
+        "cached":
+            False,
     }
-    
-    
+
+
 # ============================================================
 # AI BEST MAINTENANCE PLAN
 # ============================================================
@@ -1568,14 +3703,29 @@ def get_ai_maintenance_decisions(
 def get_ai_best_plan(
     db: Session = Depends(get_db),
 ):
-    """
-    Generate the best maintenance plan using the
-    combined AI decision engine.
-    """
+    cached = get_cached_ai(
+        "best_plan"
+    )
+
+    if cached is not None:
+        return {
+            **cached,
+            "cached":
+                True,
+        }
 
     result = generate_ai_best_plan(
         db=db
     )
+
+    if isinstance(
+        result,
+        dict,
+    ):
+        set_cached_ai(
+            "best_plan",
+            result,
+        )
 
     return result
 
@@ -1588,14 +3738,11 @@ def get_ai_best_plan(
 def get_ai_best_plan_summary(
     db: Session = Depends(get_db),
 ):
-    """
-    Return a compact summary of the AI-recommended plan.
-    """
-
     return get_ai_plan_summary(
         db=db
-    )    
-    
+    )
+
+
 # ============================================================
 # ADMIN ANALYTICS
 # ============================================================
@@ -1604,14 +3751,11 @@ def get_ai_best_plan_summary(
 def get_admin_analytics_dashboard(
     db: Session = Depends(get_db),
 ):
-    """
-    Return complete admin analytics and KPI data.
-    """
-
     return get_admin_analytics(
         db=db
-    ) 
-    
+    )
+
+
 # ============================================================
 # AI OPERATIONS AGENT
 # ============================================================
@@ -1620,15 +3764,11 @@ def get_admin_analytics_dashboard(
 def get_ai_operations_agent(
     db: Session = Depends(get_db),
 ):
-    """
-    Run the AI Operations Agent and return
-    intelligent railway maintenance recommendations.
-    """
-
     return run_ai_operations_agent(
         db=db
     )
-    
+
+
 # ============================================================
 # ASK AI OPERATIONS AGENT
 # ============================================================
@@ -1638,13 +3778,140 @@ def ask_ai_operations_agent(
     question: str,
     db: Session = Depends(get_db),
 ):
-    """
-    Ask the AI Operations Agent a railway
-    maintenance or operational question.
-    """
-
     return ask_ai_agent(
         db=db,
         question=question,
-    )        
-    
+    )
+
+
+# ============================================================
+# INTEGRATION STATUS
+# ============================================================
+
+@app.get("/integration/status")
+def get_integration_status(
+    db: Session = Depends(get_db),
+):
+    return (
+        integration_service
+        .get_health_status(
+            db=db
+        )
+    )
+
+
+# ============================================================
+# UNIFIED RAILWAY DATA
+# ============================================================
+
+@app.get("/integration/unified-data")
+def get_unified_railway_data(
+    db: Session = Depends(get_db),
+):
+    return (
+        integration_service
+        .get_unified_snapshot(
+            db=db
+        )
+    )
+
+
+# ============================================================
+# ACTUAL ML ASSET RISK — SINGLE
+# ============================================================
+
+@app.get(
+    "/ai/ml-risk/assets/{asset_id}"
+)
+def get_ml_asset_risk(
+    asset_id: int,
+    db: Session = Depends(get_db),
+):
+    asset = (
+        db.query(Asset)
+        .filter(
+            Asset.asset_id
+            == asset_id
+        )
+        .first()
+    )
+
+    if asset is None:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"Asset {asset_id} not found."
+            ),
+        )
+
+    try:
+
+        return predict_asset_risk(
+            db=db,
+            asset=asset,
+        )
+
+    except FileNotFoundError as exc:
+
+        raise HTTPException(
+            status_code=503,
+            detail=str(exc),
+        )
+
+    except Exception as exc:
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "ML prediction failed: "
+                f"{str(exc)}"
+            ),
+        )
+
+
+# ============================================================
+# ACTUAL ML ASSET RISK — ALL
+# ============================================================
+
+@app.get(
+    "/ai/ml-risk/assets"
+)
+def get_all_ml_asset_risks(
+    db: Session = Depends(get_db),
+):
+    try:
+
+        results = predict_all_asset_risks(
+            db=db
+        )
+
+        return {
+            "total_assets":
+                len(results),
+
+            "model":
+                "RandomForestClassifier",
+
+            "training_source":
+                "Synthetic prototype training data",
+
+            "assets":
+                results,
+        }
+
+    except FileNotFoundError as exc:
+
+        raise HTTPException(
+            status_code=503,
+            detail=str(exc),
+        )
+
+    except Exception as exc:
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "ML prediction failed: "
+                f"{str(exc)}"
+            ),
+        )

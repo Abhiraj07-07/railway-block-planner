@@ -6,3 +6,8 @@ sqlalchemy
 psycopg2-binary
 python-dotenv
 pydantic
+python-jose[cryptography]
+passlib[bcrypt]
+python-multipart
+scikit-learn
+joblib

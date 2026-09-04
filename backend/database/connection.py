@@ -1,72 +1,96 @@
 import os
-from urllib.parse import quote_plus
-
 from dotenv import load_dotenv
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, declarative_base
 
 load_dotenv()
 
-# ------------------------------------------------------------
-# Database configuration
-# ------------------------------------------------------------
+from sqlalchemy import create_engine
+from sqlalchemy.orm import declarative_base, sessionmaker
+
+
+# ============================================================
+# DATABASE URL
+# ============================================================
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if not DATABASE_URL:
-    DB_USER = os.getenv("DB_USER", "postgres")
-    DB_PASSWORD = os.getenv("DB_PASSWORD")
-    DB_HOST = os.getenv("DB_HOST", "localhost")
-    DB_PORT = os.getenv("DB_PORT", "5432")
-    DB_NAME = os.getenv("DB_NAME", "railway_block_planner")
-
-    if not DB_PASSWORD:
-        raise RuntimeError(
-            "Database password is not configured. "
-            "Set DB_PASSWORD or DATABASE_URL in .env."
-        )
-
-    DATABASE_URL = (
-        f"postgresql://{quote_plus(DB_USER)}:"
-        f"{quote_plus(DB_PASSWORD)}@"
-        f"{DB_HOST}:{DB_PORT}/"
-        f"{DB_NAME}"
+    raise RuntimeError(
+        "DATABASE_URL environment variable is not configured."
     )
 
-# ------------------------------------------------------------
-# SQLAlchemy engine
-# ------------------------------------------------------------
+
+# ============================================================
+# POSTGRESQL / NEON COMPATIBILITY
+# ============================================================
+
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace(
+        "postgres://",
+        "postgresql+psycopg2://",
+        1,
+    )
+
+elif DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = DATABASE_URL.replace(
+        "postgresql://",
+        "postgresql+psycopg2://",
+        1,
+    )
+
+
+# ============================================================
+# SQLALCHEMY BASE
+# ============================================================
+
+Base = declarative_base()
+
+
+# ============================================================
+# SQLALCHEMY ENGINE
+# ============================================================
 
 engine = create_engine(
     DATABASE_URL,
-    pool_pre_ping=True,
+
+    pool_size=5,
+    max_overflow=10,
+    pool_use_lifo=True,
+    pool_timeout=10,
+    pool_recycle=300,
+
+    # Avoid an extra ping on every request.
+    pool_pre_ping=False,
+
+    connect_args={
+        "sslmode": "require",
+        "connect_timeout": 10,
+    },
+
+    echo=False,
 )
 
-# ------------------------------------------------------------
-# Session
-# ------------------------------------------------------------
+
+# ============================================================
+# SESSION FACTORY
+# ============================================================
 
 SessionLocal = sessionmaker(
     autocommit=False,
     autoflush=False,
     bind=engine,
+    expire_on_commit=False,
 )
 
-# ------------------------------------------------------------
-# Base model
-# ------------------------------------------------------------
 
-Base = declarative_base()
-
-
-# ------------------------------------------------------------
-# Database dependency
-# ------------------------------------------------------------
+# ============================================================
+# FASTAPI DATABASE DEPENDENCY
+# ============================================================
 
 def get_db():
     db = SessionLocal()
 
     try:
         yield db
+
     finally:
         db.close()

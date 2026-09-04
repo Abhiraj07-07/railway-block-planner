@@ -1,3 +1,4 @@
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from backend.database.models import (
@@ -20,100 +21,179 @@ def get_operational_kpis(
     db: Session,
 ) -> dict:
     """
-    Calculate high-level operational KPIs.
+    Calculate operational KPIs using grouped SQL queries
+    instead of many individual COUNT queries.
     """
 
-    total_stations = db.query(Station).count()
+    # --------------------------------------------------------
+    # Total records
+    # --------------------------------------------------------
 
-    total_sections = db.query(Section).count()
+    total_stations = db.query(
+        func.count(Station.station_id)
+    ).scalar() or 0
 
-    total_assets = db.query(Asset).count()
+    total_sections = db.query(
+        func.count(Section.section_id)
+    ).scalar() or 0
 
-    total_tasks = db.query(MaintenanceTask).count()
+    total_assets = db.query(
+        func.count(Asset.asset_id)
+    ).scalar() or 0
 
-    total_defects = db.query(Defect).count()
+    total_tasks = db.query(
+        func.count(MaintenanceTask.task_id)
+    ).scalar() or 0
 
-    total_trains = db.query(Train).count()
+    total_defects = db.query(
+        func.count(Defect.defect_id)
+    ).scalar() or 0
 
-    total_blocks = db.query(Block).count()
+    total_trains = db.query(
+        func.count(Train.train_id)
+    ).scalar() or 0
 
-    open_defects = (
-        db.query(Defect)
-        .filter(
-            Defect.status == "OPEN"
+    total_blocks = db.query(
+        func.count(Block.block_id)
+    ).scalar() or 0
+
+    # --------------------------------------------------------
+    # Defect status
+    # --------------------------------------------------------
+
+    defect_status_rows = (
+        db.query(
+            Defect.status,
+            func.count(Defect.defect_id),
         )
-        .count()
+        .group_by(Defect.status)
+        .all()
     )
 
-    completed_tasks = (
-        db.query(MaintenanceTask)
-        .filter(
-            MaintenanceTask.status == "COMPLETED"
-        )
-        .count()
+    defect_status = {
+        str(status): int(count)
+        for status, count in defect_status_rows
+        if status is not None
+    }
+
+    open_defects = defect_status.get(
+        "OPEN",
+        0,
     )
 
-    overdue_tasks = (
-        db.query(MaintenanceTask)
-        .filter(
-            MaintenanceTask.status == "OVERDUE"
+    # --------------------------------------------------------
+    # Maintenance task status
+    # --------------------------------------------------------
+
+    task_status_rows = (
+        db.query(
+            MaintenanceTask.status,
+            func.count(MaintenanceTask.task_id),
         )
-        .count()
+        .group_by(MaintenanceTask.status)
+        .all()
     )
 
-    pending_tasks = (
-        db.query(MaintenanceTask)
-        .filter(
-            MaintenanceTask.status == "PENDING"
-        )
-        .count()
+    task_status = {
+        str(status): int(count)
+        for status, count in task_status_rows
+        if status is not None
+    }
+
+    completed_tasks = task_status.get(
+        "COMPLETED",
+        0,
     )
+
+    overdue_tasks = task_status.get(
+        "OVERDUE",
+        0,
+    )
+
+    pending_tasks = task_status.get(
+        "PENDING",
+        0,
+    )
+
+    # --------------------------------------------------------
+    # Critical assets
+    # --------------------------------------------------------
 
     critical_assets = (
-        db.query(Asset)
+        db.query(
+            func.count(Asset.asset_id)
+        )
         .filter(
             Asset.criticality == "CRITICAL"
         )
-        .count()
+        .scalar()
+        or 0
     )
 
-    planned_blocks = (
-        db.query(Block)
-        .filter(
-            Block.status == "PLANNED"
+    # --------------------------------------------------------
+    # Block status
+    # --------------------------------------------------------
+
+    block_status_rows = (
+        db.query(
+            Block.status,
+            func.count(Block.block_id),
         )
-        .count()
+        .group_by(Block.status)
+        .all()
     )
 
-    active_blocks = (
-        db.query(Block)
-        .filter(
-            Block.status.in_(
-                [
-                    "PLANNED",
-                    "APPROVED",
-                    "IN_PROGRESS",
-                ]
-            )
-        )
-        .count()
+    block_status = {
+        str(status): int(count)
+        for status, count in block_status_rows
+        if status is not None
+    }
+
+    planned_blocks = block_status.get(
+        "PLANNED",
+        0,
     )
+
+    active_blocks = sum(
+        block_status.get(status, 0)
+        for status in (
+            "PLANNED",
+            "APPROVED",
+            "IN_PROGRESS",
+        )
+    )
+
+    # --------------------------------------------------------
+    # Replanned blocks
+    # --------------------------------------------------------
 
     replanned_blocks = (
-        db.query(Block)
+        db.query(
+            func.count(Block.block_id)
+        )
         .filter(
             Block.recommended_start_time.isnot(None),
             Block.recommended_end_time.isnot(None),
         )
-        .count()
+        .scalar()
+        or 0
     )
 
+    # --------------------------------------------------------
+    # Open events
+    # --------------------------------------------------------
+
     open_events = (
-        db.query(OperationalEvent)
+        db.query(
+            func.count(
+                OperationalEvent.event_id
+            )
+        )
         .filter(
             OperationalEvent.status == "OPEN"
         )
-        .count()
+        .scalar()
+        or 0
     )
 
     return {
@@ -149,43 +229,61 @@ def get_maintenance_analytics(
     db: Session,
 ) -> dict:
     """
-    Calculate maintenance workload statistics.
+    Calculate maintenance statistics with grouped SQL.
     """
 
-    statuses = [
+    status_rows = (
+        db.query(
+            MaintenanceTask.status,
+            func.count(MaintenanceTask.task_id),
+        )
+        .group_by(MaintenanceTask.status)
+        .all()
+    )
+
+    status_counts = {
+        status: int(count)
+        for status, count in status_rows
+        if status is not None
+    }
+
+    # Keep the original expected keys even if a status
+    # does not currently exist in the database.
+    for status in (
         "PENDING",
         "COMPLETED",
         "OVERDUE",
         "CANCELLED",
-    ]
-
-    status_counts = {}
-
-    for status in statuses:
-        status_counts[status] = (
-            db.query(MaintenanceTask)
-            .filter(
-                MaintenanceTask.status == status
-            )
-            .count()
+    ):
+        status_counts.setdefault(
+            status,
+            0,
         )
 
-    severities = [
+    severity_rows = (
+        db.query(
+            MaintenanceTask.severity,
+            func.count(MaintenanceTask.task_id),
+        )
+        .group_by(MaintenanceTask.severity)
+        .all()
+    )
+
+    severity_counts = {
+        severity: int(count)
+        for severity, count in severity_rows
+        if severity is not None
+    }
+
+    for severity in (
         "LOW",
         "MEDIUM",
         "HIGH",
         "CRITICAL",
-    ]
-
-    severity_counts = {}
-
-    for severity in severities:
-        severity_counts[severity] = (
-            db.query(MaintenanceTask)
-            .filter(
-                MaintenanceTask.severity == severity
-            )
-            .count()
+    ):
+        severity_counts.setdefault(
+            severity,
+            0,
         )
 
     return {
@@ -202,39 +300,57 @@ def get_defect_analytics(
     db: Session,
 ) -> dict:
     """
-    Calculate defect statistics.
+    Calculate defect statistics with grouped SQL.
     """
 
-    severities = [
+    severity_rows = (
+        db.query(
+            Defect.severity,
+            func.count(Defect.defect_id),
+        )
+        .group_by(Defect.severity)
+        .all()
+    )
+
+    severity_counts = {
+        severity: int(count)
+        for severity, count in severity_rows
+        if severity is not None
+    }
+
+    for severity in (
         "LOW",
         "MEDIUM",
         "HIGH",
         "CRITICAL",
-    ]
-
-    severity_counts = {}
-
-    for severity in severities:
-        severity_counts[severity] = (
-            db.query(Defect)
-            .filter(
-                Defect.severity == severity
-            )
-            .count()
+    ):
+        severity_counts.setdefault(
+            severity,
+            0,
         )
 
-    status_counts = {}
+    status_rows = (
+        db.query(
+            Defect.status,
+            func.count(Defect.defect_id),
+        )
+        .group_by(Defect.status)
+        .all()
+    )
 
-    for status in [
+    status_counts = {
+        status: int(count)
+        for status, count in status_rows
+        if status is not None
+    }
+
+    for status in (
         "OPEN",
         "CLOSED",
-    ]:
-        status_counts[status] = (
-            db.query(Defect)
-            .filter(
-                Defect.status == status
-            )
-            .count()
+    ):
+        status_counts.setdefault(
+            status,
+            0,
         )
 
     return {
@@ -251,70 +367,62 @@ def get_block_analytics(
     db: Session,
 ) -> dict:
     """
-    Calculate maintenance block statistics.
+    Calculate block statistics with grouped SQL.
     """
 
-    total_blocks = db.query(Block).count()
-
-    planned = (
-        db.query(Block)
-        .filter(
-            Block.status == "PLANNED"
+    status_rows = (
+        db.query(
+            Block.status,
+            func.count(Block.block_id),
         )
-        .count()
+        .group_by(Block.status)
+        .all()
     )
 
-    approved = (
-        db.query(Block)
-        .filter(
-            Block.status == "APPROVED"
-        )
-        .count()
-    )
+    status_counts = {
+        status: int(count)
+        for status, count in status_rows
+        if status is not None
+    }
 
-    completed = (
-        db.query(Block)
-        .filter(
-            Block.status == "COMPLETED"
+    for status in (
+        "PLANNED",
+        "APPROVED",
+        "IN_PROGRESS",
+        "COMPLETED",
+        "CANCELLED",
+    ):
+        status_counts.setdefault(
+            status,
+            0,
         )
-        .count()
-    )
 
-    in_progress = (
-        db.query(Block)
-        .filter(
-            Block.status == "IN_PROGRESS"
-        )
-        .count()
-    )
-
-    cancelled = (
-        db.query(Block)
-        .filter(
-            Block.status == "CANCELLED"
-        )
-        .count()
+    total_blocks = sum(
+        status_counts.values()
     )
 
     replanned = (
-        db.query(Block)
+        db.query(
+            func.count(Block.block_id)
+        )
         .filter(
             Block.recommended_start_time.isnot(None),
             Block.recommended_end_time.isnot(None),
         )
-        .count()
+        .scalar()
+        or 0
     )
 
     return {
         "total_blocks": total_blocks,
-        "planned": planned,
-        "approved": approved,
-        "in_progress": in_progress,
-        "completed": completed,
-        "cancelled": cancelled,
-        "replanned": replanned,
+        "planned": status_counts["PLANNED"],
+        "approved": status_counts["APPROVED"],
+        "in_progress": status_counts["IN_PROGRESS"],
+        "completed": status_counts["COMPLETED"],
+        "cancelled": status_counts["CANCELLED"],
+        "replanned": int(replanned),
     }
-    
+
 
 # ============================================================
 # TRAIN & BLOCK IMPACT ANALYTICS
@@ -324,11 +432,11 @@ def get_train_block_impact_analytics(
     db: Session,
 ) -> dict:
     """
-    Calculate train movement and maintenance block
-    conflict statistics.
+    Calculate train/block impact.
+    This remains engine-based because train conflict
+    analysis requires actual scheduling logic.
     """
 
-    # Import here to avoid circular dependency.
     from backend.engines.optimization_engine import (
         analyze_all_blocks,
     )
@@ -337,7 +445,9 @@ def get_train_block_impact_analytics(
         db=db
     )
 
-    total_blocks = len(block_impacts)
+    total_blocks = len(
+        block_impacts
+    )
 
     conflict_free_blocks = 0
     low_impact_blocks = 0
@@ -351,9 +461,16 @@ def get_train_block_impact_analytics(
 
     for block in block_impacts:
 
-        impact_level = block["impact_level"]
+        impact_level = block.get(
+            "impact_level"
+        )
 
-        if block["conflict_count"] == 0:
+        conflict_count = block.get(
+            "conflict_count",
+            0,
+        )
+
+        if conflict_count == 0:
             conflict_free_blocks += 1
 
         if impact_level == "LOW":
@@ -366,23 +483,27 @@ def get_train_block_impact_analytics(
             high_impact_blocks += 1
 
         total_conflict_count += (
-            block["conflict_count"]
+            conflict_count
         )
 
         total_conflict_minutes += (
-            block["total_conflict_minutes"]
+            block.get(
+                "total_conflict_minutes",
+                0,
+            )
+            or 0
         )
 
         for train_id in (
-            block["affected_train_ids"] or []
+            block.get(
+                "affected_train_ids",
+                []
+            )
+            or []
         ):
             affected_train_ids.add(
                 train_id
             )
-
-    # --------------------------------------------------------
-    # Block utilization
-    # --------------------------------------------------------
 
     block_utilization = (
         round(
@@ -398,44 +519,36 @@ def get_train_block_impact_analytics(
     )
 
     return {
-        "total_blocks_analyzed": total_blocks,
+        "total_blocks_analyzed":
+            total_blocks,
 
-        "conflict_free_blocks": (
-            conflict_free_blocks
-        ),
+        "conflict_free_blocks":
+            conflict_free_blocks,
 
-        "low_impact_blocks": (
-            low_impact_blocks
-        ),
+        "low_impact_blocks":
+            low_impact_blocks,
 
-        "medium_impact_blocks": (
-            medium_impact_blocks
-        ),
+        "medium_impact_blocks":
+            medium_impact_blocks,
 
-        "high_impact_blocks": (
-            high_impact_blocks
-        ),
+        "high_impact_blocks":
+            high_impact_blocks,
 
-        "total_conflicts": (
-            total_conflict_count
-        ),
+        "total_conflicts":
+            total_conflict_count,
 
-        "total_conflict_minutes": (
-            total_conflict_minutes
-        ),
+        "total_conflict_minutes":
+            total_conflict_minutes,
 
-        "affected_trains": len(
-            affected_train_ids
-        ),
+        "affected_trains":
+            len(affected_train_ids),
 
-        "affected_train_ids": sorted(
-            affected_train_ids
-        ),
+        "affected_train_ids":
+            sorted(affected_train_ids),
 
-        "block_utilization_percent": (
-            block_utilization
-        ),
-    }    
+        "block_utilization_percent":
+            block_utilization,
+    }
 
 
 # ============================================================
@@ -449,7 +562,6 @@ def get_ai_analytics(
     Calculate AI risk and decision statistics.
     """
 
-    # Local imports avoid unnecessary module coupling.
     from backend.engines.risk_engine import (
         calculate_all_asset_risks,
     )
@@ -476,12 +588,21 @@ def get_ai_analytics(
     total_risk_score = 0
 
     for item in risk_results:
-        level = item["risk_level"]
+
+        level = item.get(
+            "risk_level"
+        )
 
         if level in risk_distribution:
             risk_distribution[level] += 1
 
-        total_risk_score += item["risk_score"]
+        total_risk_score += (
+            item.get(
+                "risk_score",
+                0,
+            )
+            or 0
+        )
 
     average_risk_score = (
         round(
@@ -503,12 +624,21 @@ def get_ai_analytics(
     total_ai_score = 0
 
     for item in decision_results:
-        level = item["decision_level"]
+
+        level = item.get(
+            "decision_level"
+        )
 
         if level in decision_distribution:
             decision_distribution[level] += 1
 
-        total_ai_score += item["ai_decision_score"]
+        total_ai_score += (
+            item.get(
+                "ai_decision_score",
+                0,
+            )
+            or 0
+        )
 
     average_ai_score = (
         round(
@@ -521,15 +651,20 @@ def get_ai_analytics(
     )
 
     return {
-        "risk_distribution": risk_distribution,
-        "average_risk_score": average_risk_score,
+        "risk_distribution":
+            risk_distribution,
 
-        "decision_distribution": decision_distribution,
-        "average_ai_decision_score": average_ai_score,
+        "average_risk_score":
+            average_risk_score,
 
-        "urgent_ai_decisions": decision_distribution[
-            "URGENT"
-        ],
+        "decision_distribution":
+            decision_distribution,
+
+        "average_ai_decision_score":
+            average_ai_score,
+
+        "urgent_ai_decisions":
+            decision_distribution["URGENT"],
     }
 
 
@@ -541,28 +676,37 @@ def get_admin_analytics(
     db: Session,
 ) -> dict:
     """
-    Generate the complete Phase 6 admin analytics payload.
+    Generate complete admin analytics.
     """
 
     return {
-        "operational_kpis": get_operational_kpis(
-            db=db
-        ),
-        "maintenance": get_maintenance_analytics(
-            db=db
-        ),
-        "defects": get_defect_analytics(
-            db=db
-        ),
-        "blocks": get_block_analytics(
-    db=db
-),
+        "operational_kpis":
+            get_operational_kpis(
+                db=db
+            ),
 
-"train_block_impact": get_train_block_impact_analytics(
-    db=db
-),
+        "maintenance":
+            get_maintenance_analytics(
+                db=db
+            ),
 
-"ai": get_ai_analytics(
-    db=db
-),
+        "defects":
+            get_defect_analytics(
+                db=db
+            ),
+
+        "blocks":
+            get_block_analytics(
+                db=db
+            ),
+
+        "train_block_impact":
+            get_train_block_impact_analytics(
+                db=db
+            ),
+
+        "ai":
+            get_ai_analytics(
+                db=db
+            ),
     }

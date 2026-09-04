@@ -1,8 +1,91 @@
-import { useEffect, useState } from "react";
+
+import { useEffect, useMemo, useState } from "react";
+import { authFetch } from "../App";
 import "./Trains.css";
 
-const API_BASE = "http://127.0.0.1:8000";
-const TOKEN_KEY = "railway_admin_token";
+const API_BASE =
+  import.meta.env.VITE_API_BASE ||
+  "http://127.0.0.1:8000";
+
+/* ============================================================
+   HELPERS
+============================================================ */
+
+const normalizeArray = (value) => {
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (Array.isArray(value?.data)) {
+    return value.data;
+  }
+
+  if (Array.isArray(value?.trains)) {
+    return value.trains;
+  }
+
+  if (Array.isArray(value?.schedules)) {
+    return value.schedules;
+  }
+
+  if (Array.isArray(value?.train_schedule)) {
+    return value.train_schedule;
+  }
+
+  if (Array.isArray(value?.results)) {
+    return value.results;
+  }
+
+  if (Array.isArray(value?.items)) {
+    return value.items;
+  }
+
+  return [];
+};
+
+const formatDate = (value) => {
+  if (!value) {
+    return "—";
+  }
+
+  const direct = String(value).match(
+    /^(\d{4})-(\d{2})-(\d{2})/
+  );
+
+  if (direct) {
+    return `${direct[3]}-${direct[2]}-${direct[1]}`;
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return String(value);
+  }
+
+  return date.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+};
+
+const formatTime = (value) => {
+  if (!value) {
+    return "—";
+  }
+
+  return String(value).slice(0, 5);
+};
+
+const normalizePriority = (value) => {
+  return String(value || "MEDIUM")
+    .trim()
+    .toUpperCase();
+};
+
+/* ============================================================
+   COMPONENT
+============================================================ */
 
 function Trains() {
   const [trains, setTrains] = useState([]);
@@ -11,86 +94,103 @@ function Trains() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  // ============================================================
-  // LOAD TRAIN DATA
-  // ============================================================
+  /* ==========================================================
+     LOAD TRAIN DATA
+  ========================================================== */
+
+  const loadTrainData = async () => {
+    try {
+      setLoading(true);
+      setError("");
+
+      const [
+        trainsData,
+        scheduleData,
+      ] = await Promise.all([
+        authFetch(
+          `${API_BASE}/trains`
+        ),
+
+        authFetch(
+          `${API_BASE}/train-schedule`
+        ),
+      ]);
+
+      setTrains(
+        normalizeArray(trainsData)
+      );
+
+      setTrainSchedule(
+        normalizeArray(scheduleData)
+      );
+    } catch (err) {
+      console.error(
+        "Train page error:",
+        err
+      );
+
+      setError(
+        err?.message ||
+          "Unable to load train data."
+      );
+
+      setTrains([]);
+      setTrainSchedule([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const loadTrainData = async () => {
-      try {
-        setLoading(true);
-        setError("");
-
-        const token = localStorage.getItem(TOKEN_KEY);
-
-        const headers = {
-          Accept: "application/json",
-          ...(token
-            ? {
-                Authorization: `Bearer ${token}`,
-              }
-            : {}),
-        };
-
-        const [trainsResponse, scheduleResponse] =
-          await Promise.all([
-            fetch(`${API_BASE}/trains`, {
-              headers,
-            }),
-            fetch(`${API_BASE}/train-schedule`, {
-              headers,
-            }),
-          ]);
-
-        if (!trainsResponse.ok) {
-          throw new Error(
-            `Trains API failed with status ${trainsResponse.status}`
-          );
-        }
-
-        if (!scheduleResponse.ok) {
-          throw new Error(
-            `Train schedule API failed with status ${scheduleResponse.status}`
-          );
-        }
-
-        const [trainsData, scheduleData] =
-          await Promise.all([
-            trainsResponse.json(),
-            scheduleResponse.json(),
-          ]);
-
-        setTrains(trainsData || []);
-        setTrainSchedule(scheduleData || []);
-
-      } catch (err) {
-        console.error(
-          "Train page error:",
-          err
-        );
-
-        setError(
-          err.message ||
-          "Unable to load train data."
-        );
-      } finally {
-        setLoading(false);
-      }
-    };
-
     loadTrainData();
   }, []);
 
-  // ============================================================
-  // RENDER
-  // ============================================================
+  /* ==========================================================
+     DERIVED DATA
+  ========================================================== */
+
+  const highPriorityTrains =
+    useMemo(() => {
+      return trains.filter((train) => {
+        const priority =
+          normalizePriority(
+            train.priority
+          );
+
+        return (
+          priority === "HIGH" ||
+          priority === "CRITICAL"
+        );
+      });
+    }, [trains]);
+
+  const trainScheduleCount = useMemo(() => {
+    const counts = {};
+
+    trainSchedule.forEach(
+      (schedule) => {
+        const id = String(
+          schedule.train_id
+        );
+
+        counts[id] =
+          (counts[id] || 0) + 1;
+      }
+    );
+
+    return counts;
+  }, [trainSchedule]);
+
+  /* ==========================================================
+     RENDER
+  ========================================================== */
 
   return (
     <div className="trains-page">
 
       {/* ======================================================
           PAGE HEADER
-          ====================================================== */}
+      ====================================================== */}
 
       <section className="trains-hero">
 
@@ -104,9 +204,9 @@ function Trains() {
           </h1>
 
           <p>
-            Monitor active trains, schedules,
-            priorities and railway movement
-            information.
+            Monitor active trains,
+            schedules, priorities and
+            railway movement information.
           </p>
         </div>
 
@@ -117,10 +217,9 @@ function Trains() {
 
       </section>
 
-
       {/* ======================================================
           ERROR
-          ====================================================== */}
+      ====================================================== */}
 
       {error && (
         <div className="global-error">
@@ -131,15 +230,16 @@ function Trains() {
         </div>
       )}
 
-
       {/* ======================================================
           TRAIN SUMMARY
-          ====================================================== */}
+      ====================================================== */}
 
       <section className="trains-summary">
 
         <div className="train-summary-card">
-          <span>🚆 Total Trains</span>
+          <span>
+            🚆 Total Trains
+          </span>
 
           <strong>
             {loading
@@ -149,7 +249,9 @@ function Trains() {
         </div>
 
         <div className="train-summary-card">
-          <span>📅 Schedules</span>
+          <span>
+            📅 Schedules
+          </span>
 
           <strong>
             {loading
@@ -159,25 +261,22 @@ function Trains() {
         </div>
 
         <div className="train-summary-card">
-          <span>⭐ High Priority</span>
+          <span>
+            ⭐ High Priority
+          </span>
 
           <strong>
             {loading
               ? "..."
-              : trains.filter(
-                  (train) =>
-                    train.priority === "HIGH" ||
-                    train.priority === "CRITICAL"
-                ).length}
+              : highPriorityTrains.length}
           </strong>
         </div>
 
       </section>
 
-
       {/* ======================================================
           TRAIN LIST
-          ====================================================== */}
+      ====================================================== */}
 
       <section className="trains-card">
 
@@ -200,7 +299,6 @@ function Trains() {
 
         </div>
 
-
         {loading ? (
 
           <div className="trains-loading">
@@ -221,68 +319,77 @@ function Trains() {
 
           <div className="train-list-grid">
 
-            {trains.map((train) => (
+            {trains.map((train) => {
 
-              <div
-                className="train-operation-card"
-                key={train.train_id}
-              >
+              const trainId =
+                train.train_id;
 
-                <div className="train-operation-top">
+              const priority =
+                normalizePriority(
+                  train.priority
+                );
 
-                  <div className="train-number">
-                    🚆 {train.train_no}
-                  </div>
+              const scheduleCount =
+                trainScheduleCount[
+                  String(trainId)
+                ] || 0;
 
-                  <span
-                    className={`badge ${
-                      (
-                        train.priority ||
-                        "MEDIUM"
-                      ).toLowerCase()
-                    }`}
-                  >
-                    {train.priority ||
-                      "MEDIUM"}
-                  </span>
+              return (
+                <div
+                  className="train-operation-card"
+                  key={trainId}
+                >
 
-                </div>
+                  <div className="train-operation-top">
 
-                <h3>
-                  {train.train_name}
-                </h3>
+                    <div className="train-number">
+                      🚆{" "}
+                      {train.train_no}
+                    </div>
 
-                <p>
-                  {train.train_type}
-                </p>
-
-                <div className="train-operation-info">
-
-                  <div>
-                    <span>
-                      Train ID
+                    <span
+                      className={`badge ${priority.toLowerCase()}`}
+                    >
+                      {priority}
                     </span>
 
-                    <strong>
-                      {train.train_id}
-                    </strong>
                   </div>
 
-                  <div>
-                    <span>
-                      Priority
-                    </span>
+                  <h3>
+                    {train.train_name}
+                  </h3>
 
-                    <strong>
-                      {train.priority}
-                    </strong>
+                  <p>
+                    {train.train_type}
+                  </p>
+
+                  <div className="train-operation-info">
+
+                    <div>
+                      <span>
+                        Train ID
+                      </span>
+
+                      <strong>
+                        {trainId}
+                      </strong>
+                    </div>
+
+                    <div>
+                      <span>
+                        Schedule Entries
+                      </span>
+
+                      <strong>
+                        {scheduleCount}
+                      </strong>
+                    </div>
+
                   </div>
 
                 </div>
-
-              </div>
-
-            ))}
+              );
+            })}
 
           </div>
 
@@ -290,10 +397,9 @@ function Trains() {
 
       </section>
 
-
       {/* ======================================================
           TRAIN SCHEDULE
-          ====================================================== */}
+      ====================================================== */}
 
       <section className="trains-card">
 
@@ -315,7 +421,6 @@ function Trains() {
           </span>
 
         </div>
-
 
         {loading ? (
 
@@ -355,11 +460,12 @@ function Trains() {
               <tbody>
 
                 {trainSchedule.map(
-                  (schedule) => (
+                  (schedule, index) => (
 
                     <tr
                       key={
-                        schedule.schedule_id
+                        schedule.schedule_id ??
+                        `${schedule.train_id}-${schedule.schedule_date}-${schedule.section_id}-${index}`
                       }
                     >
 
@@ -367,7 +473,8 @@ function Trains() {
                         <strong>
                           #
                           {
-                            schedule.schedule_id
+                            schedule.schedule_id ??
+                            "—"
                           }
                         </strong>
                       </td>
@@ -383,28 +490,31 @@ function Trains() {
                         SEC
                         {String(
                           schedule.section_id
-                        ).padStart(2, "0")}
+                        ).padStart(
+                          2,
+                          "0"
+                        )}
                       </td>
 
                       <td>
-                        {
+                        {formatDate(
                           schedule.schedule_date
-                        }
+                        )}
                       </td>
 
                       <td>
                         <span className="time-badge">
-                          {
+                          {formatTime(
                             schedule.arrival_time
-                          }
+                          )}
                         </span>
                       </td>
 
                       <td>
                         <span className="time-badge">
-                          {
+                          {formatTime(
                             schedule.departure_time
-                          }
+                          )}
                         </span>
                       </td>
 
@@ -422,6 +532,25 @@ function Trains() {
         )}
 
       </section>
+
+      {/* ======================================================
+          FOOTER
+      ====================================================== */}
+
+      <div className="home-footer-note">
+
+        <span>
+          🚆 AI Automatic Railway Block Planner
+        </span>
+
+        <span>
+          Project Leader:{" "}
+          <strong>
+            Abhishek Kumar
+          </strong>
+        </span>
+
+      </div>
 
     </div>
   );

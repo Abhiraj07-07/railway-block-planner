@@ -1,15 +1,13 @@
 import "./Blocks.css";
-import {
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+import { useEffect, useMemo, useState } from "react";
 
-const API_BASE = "http://127.0.0.1:8000";
+const API_BASE =
+  import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000";
+
 const TOKEN_KEY = "railway_admin_token";
 
 /* =========================================================
-   RAW AUTH FETCH
+   AUTH FETCH
 ========================================================= */
 
 const authFetch = (url, options = {}) => {
@@ -46,46 +44,35 @@ const normalizeArray = (value) => {
     return value;
   }
 
-  if (
-    value?.data &&
-    Array.isArray(value.data)
-  ) {
+  if (value?.data && Array.isArray(value.data)) {
     return value.data;
   }
 
-  if (
-    value?.items &&
-    Array.isArray(value.items)
-  ) {
+  if (value?.items && Array.isArray(value.items)) {
     return value.items;
   }
 
-  if (
-    value?.results &&
-    Array.isArray(value.results)
-  ) {
+  if (value?.results && Array.isArray(value.results)) {
     return value.results;
   }
 
-  if (
-    value?.blocks &&
-    Array.isArray(value.blocks)
-  ) {
+  if (value?.blocks && Array.isArray(value.blocks)) {
     return value.blocks;
   }
 
-  if (
-    value?.tasks &&
-    Array.isArray(value.tasks)
-  ) {
+  if (value?.tasks && Array.isArray(value.tasks)) {
     return value.tasks;
   }
 
-  if (
-    value?.decisions &&
-    Array.isArray(value.decisions)
-  ) {
+  if (value?.decisions && Array.isArray(value.decisions)) {
     return value.decisions;
+  }
+
+  if (
+    value?.recommendations &&
+    Array.isArray(value.recommendations)
+  ) {
+    return value.recommendations;
   }
 
   return [];
@@ -96,10 +83,9 @@ const formatDate = (value) => {
     return "—";
   }
 
-  const direct =
-    String(value).match(
-      /^(\d{4})-(\d{2})-(\d{2})/
-    );
+  const direct = String(value).match(
+    /^(\d{4})-(\d{2})-(\d{2})/
+  );
 
   if (direct) {
     return `${direct[3]}-${direct[2]}-${direct[1]}`;
@@ -113,11 +99,29 @@ const formatTime = (value) => {
     return "—";
   }
 
-  const text = String(value);
+  return String(value).slice(0, 5);
+};
 
-  return text.length >= 5
-    ? text.slice(0, 5)
-    : text;
+/*
+  Backend create-block endpoint expects HH:MM.
+  AI recommendation may return HH:MM:SS.
+*/
+const toHHMM = (value) => {
+  if (!value) {
+    return "";
+  }
+
+  const text = String(value).trim();
+
+  const match = text.match(
+    /^(\d{1,2}):(\d{2})(?::\d{2})?$/
+  );
+
+  if (!match) {
+    return "";
+  }
+
+  return `${match[1].padStart(2, "0")}:${match[2]}`;
 };
 
 const toMinutes = (value) => {
@@ -151,26 +155,22 @@ const statusClass = (value) => {
 };
 
 const getBlockTaskIds = (block) => {
-  if (
-    Array.isArray(
-      block?.task_ids
-    )
-  ) {
+  if (Array.isArray(block?.task_ids)) {
     return block.task_ids;
   }
 
-  if (
-    Array.isArray(
-      block?.tasks
-    )
-  ) {
+  if (Array.isArray(block?.tasks)) {
     return block.tasks
       .map((task) =>
         typeof task === "object"
           ? task.task_id
           : task
       )
-      .filter(Boolean);
+      .filter(
+        (value) =>
+          value !== undefined &&
+          value !== null
+      );
   }
 
   if (
@@ -181,6 +181,22 @@ const getBlockTaskIds = (block) => {
   }
 
   return [];
+};
+
+const getTodayISO = () => {
+  const date = new Date();
+
+  const year = date.getFullYear();
+
+  const month = String(
+    date.getMonth() + 1
+  ).padStart(2, "0");
+
+  const day = String(
+    date.getDate()
+  ).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
 };
 
 /* =========================================================
@@ -196,14 +212,31 @@ function Blocks() {
   const [sections, setSections] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [aiDecisions, setAiDecisions] = useState([]);
+  const [aiRecommendations, setAiRecommendations] =
+    useState([]);
 
   /* =======================================================
      LOADING
   ======================================================= */
 
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [aiLoading, setAiLoading] = useState(true);
+  const [refreshing, setRefreshing] =
+    useState(false);
+
+  const [aiLoading, setAiLoading] =
+    useState(true);
+
+  const [recommendationLoading, setRecommendationLoading] =
+    useState(false);
+
+  const [creatingRecommendation, setCreatingRecommendation] =
+    useState(null);
+
+  const [createLoading, setCreateLoading] =
+    useState(false);
+
+  const [statusLoading, setStatusLoading] =
+    useState(null);
 
   /* =======================================================
      UI
@@ -218,11 +251,8 @@ function Blocks() {
   const [showCreateBlock, setShowCreateBlock] =
     useState(false);
 
-  const [createLoading, setCreateLoading] =
-    useState(false);
-
-  const [statusLoading, setStatusLoading] =
-    useState(null);
+  const [recommendationDate, setRecommendationDate] =
+    useState(getTodayISO());
 
   const [newBlock, setNewBlock] = useState({
     section_id: "",
@@ -233,11 +263,7 @@ function Blocks() {
   });
 
   /* =======================================================
-     LOAD CORE BLOCK DATA
-     
-     IMPORTANT:
-     Blocks + sections + tasks load independently.
-     AI is NOT blocking initial page.
+     LOAD CORE DATA
   ======================================================= */
 
   const loadCoreData = async ({
@@ -304,8 +330,7 @@ function Blocks() {
          SECTIONS
       ----------------------------------------------------- */
 
-      const sectionsResult =
-        results[1];
+      const sectionsResult = results[1];
 
       if (
         sectionsResult.status ===
@@ -363,7 +388,7 @@ function Blocks() {
   };
 
   /* =======================================================
-     LOAD AI SEPARATELY
+     LOAD AI DECISIONS
   ======================================================= */
 
   const loadAIDecisions = async () => {
@@ -393,13 +418,62 @@ function Blocks() {
         "AI decisions load error:",
         err
       );
-
-      /*
-        AI failure should NOT break
-        Blocks page.
-      */
     } finally {
       setAiLoading(false);
+    }
+  };
+
+  /* =======================================================
+     LOAD AI RECOMMENDATIONS
+  ======================================================= */
+
+  const loadAIRecommendations = async (
+    date = recommendationDate
+  ) => {
+    try {
+      setRecommendationLoading(true);
+      setError("");
+
+      const response =
+        await authFetch(
+          `${API_BASE}/planner/recommendations?schedule_date=${encodeURIComponent(
+            date
+          )}`
+        );
+
+      const data =
+        await safeJson(response);
+
+      if (!response.ok) {
+        throw new Error(
+          data?.detail ||
+            `Recommendation API failed: ${response.status}`
+        );
+      }
+
+      const recommendations =
+        normalizeArray(data);
+
+      setAiRecommendations(
+        recommendations.filter(
+          (item) =>
+            item?.recommended !== false
+        )
+      );
+    } catch (err) {
+      console.error(
+        "AI recommendation load error:",
+        err
+      );
+
+      setError(
+        err?.message ||
+          "Unable to load AI block recommendations."
+      );
+
+      setAiRecommendations([]);
+    } finally {
+      setRecommendationLoading(false);
     }
   };
 
@@ -412,12 +486,9 @@ function Blocks() {
       initial: true,
     });
 
-    /*
-      AI starts separately after
-      the first render has begun.
-    */
     const timer = setTimeout(() => {
       loadAIDecisions();
+      loadAIRecommendations();
     }, 150);
 
     return () => {
@@ -592,7 +663,7 @@ function Blocks() {
   };
 
   /* =======================================================
-     CREATE VALIDATION
+     MANUAL BLOCK VALIDATION
   ======================================================= */
 
   const validateNewBlock =
@@ -642,7 +713,7 @@ function Blocks() {
     };
 
   /* =======================================================
-     CREATE BLOCK
+     CREATE MANUAL BLOCK
   ======================================================= */
 
   const handleCreateBlock =
@@ -662,6 +733,16 @@ function Blocks() {
         setMessage("");
         setError("");
 
+        const startTime =
+          toHHMM(
+            newBlock.start_time
+          );
+
+        const endTime =
+          toHHMM(
+            newBlock.end_time
+          );
+
         const url =
           `${API_BASE}/planner/create-block` +
           `?section_id=${encodeURIComponent(
@@ -671,10 +752,13 @@ function Blocks() {
             newBlock.block_date
           )}` +
           `&start_time=${encodeURIComponent(
-            newBlock.start_time
+            startTime
           )}` +
           `&end_time=${encodeURIComponent(
-            newBlock.end_time
+            endTime
+          )}` +
+          `&admin=${encodeURIComponent(
+            "Abhishek Pal"
           )}`;
 
         const response =
@@ -719,32 +803,158 @@ function Blocks() {
 
         setShowCreateBlock(false);
 
-        /*
-          Refresh only core data.
-          AI does not block completion.
-        */
         await loadCoreData({
           refresh: true,
         });
 
-        /*
-          Refresh AI quietly.
-        */
-        loadAIDecisions();
+        await loadAIDecisions();
+
+        await loadAIRecommendations(
+          recommendationDate
+        );
       } catch (err) {
         console.error(
           "Create block error:",
           err
         );
 
-        setMessage(
-          `❌ ${
-            err?.message ||
+        setError(
+          err?.message ||
             "Unable to create block."
-          }`
         );
       } finally {
         setCreateLoading(false);
+      }
+    };
+
+  /* =======================================================
+     CREATE AI RECOMMENDED BLOCK
+  ======================================================= */
+
+  const handleCreateRecommendation =
+    async (
+      recommendation,
+      index
+    ) => {
+      try {
+        setCreatingRecommendation(
+          index
+        );
+
+        setMessage("");
+        setError("");
+
+        const taskIds =
+          Array.isArray(
+            recommendation.task_ids
+          )
+            ? recommendation.task_ids
+            : [];
+
+        if (taskIds.length === 0) {
+          throw new Error(
+            "AI recommendation does not contain task IDs."
+          );
+        }
+
+        const startTime =
+          toHHMM(
+            recommendation.start_time
+          );
+
+        const endTime =
+          toHHMM(
+            recommendation.end_time
+          );
+
+        if (!startTime || !endTime) {
+          throw new Error(
+            "AI recommendation contains an invalid time window."
+          );
+        }
+
+        const blockDate =
+          String(
+            recommendation.schedule_date ||
+              ""
+          ).slice(0, 10);
+
+        if (!blockDate) {
+          throw new Error(
+            "AI recommendation does not contain a valid planning date."
+          );
+        }
+
+        const url =
+          `${API_BASE}/planner/create-block` +
+          `?section_id=${encodeURIComponent(
+            recommendation.section_id
+          )}` +
+          `&block_date=${encodeURIComponent(
+            blockDate
+          )}` +
+          `&start_time=${encodeURIComponent(
+            startTime
+          )}` +
+          `&end_time=${encodeURIComponent(
+            endTime
+          )}` +
+          `&admin=${encodeURIComponent(
+            "Abhishek Pal"
+          )}`;
+
+        const response =
+          await authFetch(
+            url,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type":
+                  "application/json",
+              },
+              body: JSON.stringify(
+                taskIds
+              ),
+            }
+          );
+
+        const data =
+          await safeJson(response);
+
+        if (!response.ok) {
+          throw new Error(
+            data?.detail ||
+              `AI block creation failed: ${response.status}`
+          );
+        }
+
+        setMessage(
+          `✅ AI recommendation converted into a planned maintenance block.`
+        );
+
+        await loadCoreData({
+          refresh: true,
+        });
+
+        await loadAIDecisions();
+
+        await loadAIRecommendations(
+          recommendationDate
+        );
+      } catch (err) {
+        console.error(
+          "Create AI recommendation error:",
+          err
+        );
+
+        setError(
+          err?.message ||
+            "Unable to create AI recommended block."
+        );
+      } finally {
+        setCreatingRecommendation(
+          null
+        );
       }
     };
 
@@ -830,10 +1040,6 @@ function Blocks() {
           );
         }
 
-        /*
-          Optimistic/local update.
-          User sees status immediately.
-        */
         setBlocks(
           (previous) =>
             previous.map(
@@ -853,11 +1059,8 @@ function Blocks() {
           `✅ Block status updated to ${newStatus}.`
         );
 
-        /*
-          Small background sync.
-        */
-        loadCoreData();
-        loadAIDecisions();
+        await loadCoreData();
+        await loadAIDecisions();
       } catch (err) {
         console.error(
           "Status update error:",
@@ -1026,24 +1229,15 @@ function Blocks() {
       </div>
 
       {/* =================================================
-          ERROR
+          ALERTS
       ================================================= */}
 
       {error && (
         <div className="global-error">
-
-          <strong>
-            Error:
-          </strong>{" "}
-
+          <strong>Error:</strong>{" "}
           {error}
-
         </div>
       )}
-
-      {/* =================================================
-          MESSAGE
-      ================================================= */}
 
       {message && (
         <div className="action-message">
@@ -1158,7 +1352,588 @@ function Blocks() {
       )}
 
       {/* =================================================
-          CREATE BLOCK
+          AI RECOMMENDATIONS
+      ================================================= */}
+
+      <section className="page-card">
+
+        <div
+          className="page-card-header"
+          style={{
+            alignItems:
+              "flex-start",
+            gap: "15px",
+            flexWrap:
+              "wrap",
+          }}
+        >
+
+          <div>
+
+            <h2>
+              🤖 AI Recommended Blocks
+            </h2>
+
+            <p>
+              AI combines maintenance
+              priority, asset risk and
+              railway train schedules to
+              recommend safer maintenance
+              windows.
+            </p>
+
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              gap: "8px",
+              alignItems:
+                "center",
+              flexWrap:
+                "wrap",
+            }}
+          >
+
+            <input
+              type="date"
+              value={
+                recommendationDate
+              }
+              onChange={(event) =>
+                setRecommendationDate(
+                  event.target.value
+                )
+              }
+              style={{
+                padding:
+                  "9px 11px",
+                border:
+                  "1px solid #cbd5e1",
+                borderRadius:
+                  "9px",
+                background:
+                  "#ffffff",
+                color:
+                  "#0f172a",
+                fontWeight:
+                  "700",
+              }}
+            />
+
+            <button
+              className="filter-button active"
+              type="button"
+              onClick={() =>
+                loadAIRecommendations(
+                  recommendationDate
+                )
+              }
+              disabled={
+                recommendationLoading ||
+                !recommendationDate
+              }
+            >
+              {recommendationLoading
+                ? "⏳ Planning..."
+                : "🧠 Generate AI Plan"}
+            </button>
+
+          </div>
+
+        </div>
+
+        <div
+          style={{
+            marginBottom:
+              "16px",
+            padding:
+              "11px 13px",
+            borderRadius:
+              "10px",
+            background:
+              "#f8fafc",
+            border:
+              "1px solid #e2e8f0",
+            fontSize:
+              "12px",
+            fontWeight:
+              "800",
+            color:
+              "#475569",
+          }}
+        >
+          📅 Planning date:{" "}
+          <strong>
+            {formatDate(
+              recommendationDate
+            )}
+          </strong>
+          {" · "}
+          {recommendationLoading
+            ? "Generating..."
+            : `${aiRecommendations.length} AI recommendation${
+                aiRecommendations.length !==
+                1
+                  ? "s"
+                  : ""
+              }`}
+        </div>
+
+        {recommendationLoading ? (
+
+          <div className="page-loading">
+
+            <div className="loader" />
+
+            AI is analysing
+            maintenance tasks,
+            train traffic and safe
+            maintenance windows...
+
+          </div>
+
+        ) : aiRecommendations.length ===
+          0 ? (
+
+          <div
+            style={{
+              padding:
+                "25px 15px",
+              textAlign:
+                "center",
+              color:
+                "#64748b",
+              fontWeight:
+                "700",
+            }}
+          >
+            No AI maintenance
+            recommendations available
+            for this date.
+          </div>
+
+        ) : (
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns:
+                "repeat(auto-fit, minmax(310px, 1fr))",
+              gap: "15px",
+            }}
+          >
+
+            {aiRecommendations.map(
+              (
+                recommendation,
+                index
+              ) => {
+
+                const section =
+                  sectionMap[
+                    recommendation.section_id
+                  ];
+
+                const recommendationTasks =
+                  Array.isArray(
+                    recommendation.task_ids
+                  )
+                    ? recommendation.task_ids
+                        .map(
+                          (id) =>
+                            taskMap[id]
+                        )
+                        .filter(Boolean)
+                    : [];
+
+                const isCreating =
+                  creatingRecommendation ===
+                  index;
+
+                return (
+                  <div
+                    key={`${recommendation.section_id}-${recommendation.start_time}-${index}`}
+                    style={{
+                      border:
+                        "1px solid #dbeafe",
+                      borderRadius:
+                        "15px",
+                      padding:
+                        "17px",
+                      background:
+                        "linear-gradient(145deg,#ffffff,#f8fbff)",
+                      boxShadow:
+                        "0 8px 22px rgba(15,23,42,0.06)",
+                    }}
+                  >
+
+                    {/* TOP */}
+
+                    <div
+                      style={{
+                        display:
+                          "flex",
+                        justifyContent:
+                          "space-between",
+                        alignItems:
+                          "flex-start",
+                        gap:
+                          "10px",
+                        marginBottom:
+                          "13px",
+                      }}
+                    >
+
+                      <div>
+
+                        <div
+                          style={{
+                            fontSize:
+                              "11px",
+                            fontWeight:
+                              "850",
+                            color:
+                              "#2563eb",
+                            letterSpacing:
+                              "0.07em",
+                          }}
+                        >
+                          🤖 AI RECOMMENDED
+                        </div>
+
+                        <h3
+                          style={{
+                            margin:
+                              "5px 0 2px",
+                            fontSize:
+                              "17px",
+                            color:
+                              "#0f172a",
+                          }}
+                        >
+                          {getSectionLabel(
+                            recommendation.section_id
+                          )}
+                        </h3>
+
+                      </div>
+
+                      <span
+                        style={{
+                          padding:
+                            "6px 9px",
+                          borderRadius:
+                            "999px",
+                          background:
+                            "#eff6ff",
+                          color:
+                            "#1d4ed8",
+                          fontSize:
+                            "11px",
+                          fontWeight:
+                            "850",
+                        }}
+                      >
+                        {recommendation.task_count ??
+                          recommendationTasks.length}{" "}
+                        task
+                        {(recommendation.task_count ??
+                          recommendationTasks.length) !==
+                        1
+                          ? "s"
+                          : ""}
+                      </span>
+
+                    </div>
+
+                    {/* DATE / TIME */}
+
+                    <div
+                      style={{
+                        display:
+                          "grid",
+                        gridTemplateColumns:
+                          "1fr 1fr",
+                        gap:
+                          "10px",
+                        marginBottom:
+                          "13px",
+                      }}
+                    >
+
+                      <div
+                        style={{
+                          padding:
+                            "10px",
+                          borderRadius:
+                            "10px",
+                          background:
+                            "#f8fafc",
+                        }}
+                      >
+
+                        <span
+                          style={{
+                            display:
+                              "block",
+                            fontSize:
+                              "10px",
+                            fontWeight:
+                              "800",
+                            color:
+                              "#64748b",
+                            marginBottom:
+                              "4px",
+                          }}
+                        >
+                          DATE
+                        </span>
+
+                        <strong
+                          style={{
+                            fontSize:
+                              "13px",
+                            color:
+                              "#0f172a",
+                          }}
+                        >
+                          {formatDate(
+                            recommendation.schedule_date
+                          )}
+                        </strong>
+
+                      </div>
+
+                      <div
+                        style={{
+                          padding:
+                            "10px",
+                          borderRadius:
+                            "10px",
+                          background:
+                            "#f8fafc",
+                        }}
+                      >
+
+                        <span
+                          style={{
+                            display:
+                              "block",
+                            fontSize:
+                              "10px",
+                            fontWeight:
+                              "800",
+                            color:
+                              "#64748b",
+                            marginBottom:
+                              "4px",
+                          }}
+                        >
+                          SAFE WINDOW
+                        </span>
+
+                        <strong
+                          style={{
+                            fontSize:
+                              "13px",
+                            color:
+                              "#0f172a",
+                          }}
+                        >
+                          {formatTime(
+                            recommendation.start_time
+                          )}
+                          {" – "}
+                          {formatTime(
+                            recommendation.end_time
+                          )}
+                        </strong>
+
+                      </div>
+
+                    </div>
+
+                    {/* SECTION DETAILS */}
+
+                    <div
+                      style={{
+                        fontSize:
+                          "12px",
+                        color:
+                          "#475569",
+                        marginBottom:
+                          "12px",
+                      }}
+                    >
+
+                      <strong>
+                        {section?.from_station ??
+                          "Station"}
+                      </strong>
+
+                      {" → "}
+
+                      <strong>
+                        {section?.to_station ??
+                          "Station"}
+                      </strong>
+
+                      {section?.distance_km !==
+                        undefined && (
+                        <>
+                          {" · "}
+                          {
+                            section.distance_km
+                          }{" "}
+                          km
+                        </>
+                      )}
+
+                    </div>
+
+                    {/* TASKS */}
+
+                    <div
+                      style={{
+                        marginBottom:
+                          "13px",
+                      }}
+                    >
+
+                      <div
+                        style={{
+                          fontSize:
+                            "10px",
+                          fontWeight:
+                            "850",
+                          color:
+                            "#64748b",
+                          marginBottom:
+                            "7px",
+                          letterSpacing:
+                            "0.05em",
+                        }}
+                      >
+                        MAINTENANCE TASKS
+                      </div>
+
+                      <div
+                        style={{
+                          display:
+                            "flex",
+                          gap:
+                            "6px",
+                          flexWrap:
+                            "wrap",
+                        }}
+                      >
+
+                        {(
+                          recommendation.task_codes ||
+                          []
+                        ).map(
+                          (code) => (
+                            <span
+                              key={
+                                code
+                              }
+                              style={{
+                                padding:
+                                  "5px 8px",
+                                borderRadius:
+                                  "7px",
+                                background:
+                                  "#f1f5f9",
+                                border:
+                                  "1px solid #e2e8f0",
+                                color:
+                                  "#334155",
+                                fontSize:
+                                  "11px",
+                                fontWeight:
+                                  "800",
+                              }}
+                            >
+                              {code}
+                            </span>
+                          )
+                        )}
+
+                      </div>
+
+                    </div>
+
+                    {/* REASON */}
+
+                    <div
+                      style={{
+                        padding:
+                          "10px",
+                        borderRadius:
+                          "9px",
+                        background:
+                          "#f0fdf4",
+                        border:
+                          "1px solid #dcfce7",
+                        color:
+                          "#166534",
+                        fontSize:
+                          "11px",
+                        lineHeight:
+                          "1.5",
+                        marginBottom:
+                          "13px",
+                      }}
+                    >
+
+                      <strong>
+                        🧠 Why this plan?
+                      </strong>
+
+                      <br />
+
+                      {recommendation.reason ||
+                        "Priority-aware AI planning with train-conflict avoidance."}
+
+                    </div>
+
+                    {/* CREATE */}
+
+                    <button
+                      type="button"
+                      className="primary-button"
+                      onClick={() =>
+                        handleCreateRecommendation(
+                          recommendation,
+                          index
+                        )
+                      }
+                      disabled={
+                        isCreating
+                      }
+                      style={{
+                        width:
+                          "100%",
+                      }}
+                    >
+                      {isCreating
+                        ? "⏳ Creating Block..."
+                        : "🚧 Create This AI Block"}
+                    </button>
+
+                  </div>
+                );
+              }
+            )}
+
+          </div>
+        )}
+
+      </section>
+
+      {/* =================================================
+          MANUAL CREATE BLOCK
       ================================================= */}
 
       {showCreateBlock && (
@@ -1355,7 +2130,9 @@ function Blocks() {
 
                       <input
                         type="checkbox"
-                        checked={selected}
+                        checked={
+                          selected
+                        }
                         onChange={() =>
                           toggleTask(
                             task.task_id
@@ -1419,25 +2196,32 @@ function Blocks() {
           <div
             style={{
               display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
+              alignItems:
+                "center",
+              justifyContent:
+                "space-between",
               gap: "15px",
-              flexWrap: "wrap",
+              flexWrap:
+                "wrap",
             }}
           >
 
             <span
               style={{
-                color: "#64748b",
-                fontSize: "12px",
-                fontWeight: "700",
+                color:
+                  "#64748b",
+                fontSize:
+                  "12px",
+                fontWeight:
+                  "700",
               }}
             >
               {newBlock.task_ids.length} task
               {newBlock.task_ids.length !==
               1
                 ? "s"
-                : ""} selected
+                : ""}{" "}
+              selected
             </span>
 
             <button
@@ -1446,7 +2230,9 @@ function Blocks() {
               onClick={
                 handleCreateBlock
               }
-              disabled={createLoading}
+              disabled={
+                createLoading
+              }
             >
               {createLoading
                 ? "⏳ Creating..."
@@ -1459,7 +2245,7 @@ function Blocks() {
       )}
 
       {/* =================================================
-          BLOCK LIST
+          SAVED BLOCKS
       ================================================= */}
 
       <section className="page-card">
@@ -1481,8 +2267,9 @@ function Blocks() {
           </div>
 
           <span className="page-count">
-            {filteredBlocks.length}
-            {" "}
+            {
+              filteredBlocks.length
+            }{" "}
             Blocks
           </span>
 
@@ -1518,7 +2305,8 @@ function Blocks() {
               }
             >
 
-              {filter === "ALL"
+              {filter ===
+              "ALL"
                 ? "📋 All"
                 : filter ===
                   "PLANNED"
@@ -1559,10 +2347,54 @@ function Blocks() {
         ) : filteredBlocks.length ===
           0 ? (
 
-          <p className="empty-state">
-            No maintenance blocks
-            found.
-          </p>
+          <div
+            style={{
+              padding:
+                "30px 15px",
+              textAlign:
+                "center",
+            }}
+          >
+
+            <div
+              style={{
+                fontSize:
+                  "35px",
+                marginBottom:
+                  "8px",
+              }}
+            >
+              🚧
+            </div>
+
+            <p
+              className="empty-state"
+              style={{
+                margin:
+                  "0 0 8px",
+              }}
+            >
+              No maintenance blocks
+              found.
+            </p>
+
+            <span
+              style={{
+                fontSize:
+                  "12px",
+                color:
+                  "#64748b",
+                fontWeight:
+                  "650",
+              }}
+            >
+              Create an AI-recommended
+              block above to start the
+              maintenance planning
+              workflow.
+            </span>
+
+          </div>
 
         ) : (
 
@@ -1673,13 +2505,11 @@ function Blocks() {
                         {/* SECTION */}
 
                         <td>
-
                           {
                             getSectionLabel(
                               block.section_id
                             )
                           }
-
                         </td>
 
                         {/* DATE */}
@@ -1713,25 +2543,25 @@ function Blocks() {
                           {block.recommended_start_time &&
                             block.recommended_end_time && (
 
-                              <small className="recommended-time">
+                            <small className="recommended-time">
 
-                                AI:
-                                {" "}
-                                {
-                                  formatTime(
-                                    block.recommended_start_time
-                                  )
-                                }
-                                {" – "}
-                                {
-                                  formatTime(
-                                    block.recommended_end_time
-                                  )
-                                }
+                              AI:
+                              {" "}
+                              {
+                                formatTime(
+                                  block.recommended_start_time
+                                )
+                              }
+                              {" – "}
+                              {
+                                formatTime(
+                                  block.recommended_end_time
+                                )
+                              }
 
-                              </small>
+                            </small>
 
-                            )}
+                          )}
 
                         </td>
 
@@ -1745,7 +2575,9 @@ function Blocks() {
                             <div className="block-task-chip-list">
 
                               {blockTasks.map(
-                                (task) => (
+                                (
+                                  task
+                                ) => (
                                   <span
                                     className="task-code-chip"
                                     key={
@@ -1793,8 +2625,7 @@ function Blocks() {
                                   {
                                     bestDecision.ml_risk_percentage ??
                                     "—"
-                                  }
-                                  %
+                                  }%
                                 </strong>
 
                               </div>
@@ -1834,21 +2665,21 @@ function Blocks() {
                                 bestDecision.planning_score !==
                                   null && (
 
-                                  <div>
+                                <div>
 
-                                    <span>
-                                      Planning
-                                    </span>
+                                  <span>
+                                    Planning
+                                  </span>
 
-                                    <strong>
-                                      {
-                                        bestDecision.planning_score
-                                      }
-                                    </strong>
+                                  <strong>
+                                    {
+                                      bestDecision.planning_score
+                                    }
+                                  </strong>
 
-                                  </div>
+                                </div>
 
-                                )}
+                              )}
 
                               <span
                                 className={`badge ${statusClass(
@@ -1901,7 +2732,8 @@ function Blocks() {
 
                         <td>
 
-                          {actions.length > 0 ? (
+                          {actions.length >
+                          0 ? (
 
                             actions.map(
                               (

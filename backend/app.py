@@ -288,6 +288,7 @@ def clear_ai_cache():
     # Important:
     # Block/task/event changes can affect all dashboard reads.
     clear_data_cache()
+    clear_analytics_cache()
 
 
 def get_cached_ai(key: str):
@@ -4146,15 +4147,68 @@ def get_ai_best_plan_summary(
 # ADMIN ANALYTICS
 # ============================================================
 
+ANALYTICS_CACHE_TTL_SECONDS = 10.0
+
+_analytics_cache = None
+_analytics_cache_time = 0.0
+_analytics_cache_lock = Lock()
+
+
+def clear_analytics_cache():
+    global _analytics_cache
+    global _analytics_cache_time
+
+    with _analytics_cache_lock:
+        _analytics_cache = None
+        _analytics_cache_time = 0.0
+
+
+def get_cached_analytics():
+    now = monotonic()
+
+    with _analytics_cache_lock:
+        if (
+            _analytics_cache is not None
+            and (
+                now - _analytics_cache_time
+            ) < ANALYTICS_CACHE_TTL_SECONDS
+        ):
+            return _analytics_cache
+
+    return None
+
+
+def set_cached_analytics(value):
+    global _analytics_cache
+    global _analytics_cache_time
+
+    with _analytics_cache_lock:
+        _analytics_cache = value
+        _analytics_cache_time = monotonic()
+
+
 @app.get("/admin/analytics")
 def get_admin_analytics_dashboard(
     db: Session = Depends(get_db),
 ):
-    return get_admin_analytics(
+    cached = get_cached_analytics()
+
+    if cached is not None:
+        return {
+            **cached,
+            "cached": True,
+        }
+
+    result = get_admin_analytics(
         db=db
     )
 
+    set_cached_analytics(result)
 
+    return {
+        **result,
+        "cached": False,
+    }
 # ============================================================
 # AI OPERATIONS AGENT
 # ============================================================

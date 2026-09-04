@@ -1,3 +1,4 @@
+
 import React, {
   useEffect,
   useMemo,
@@ -7,64 +8,157 @@ import React, {
 import { authFetch } from "../App";
 import "./Timeline.css";
 
-const API_BASE = "http://127.0.0.1:8000";
+/* =========================================================
+   API CONFIG
+========================================================= */
+
+const API_BASE =
+  import.meta.env.VITE_API_BASE ||
+  "http://127.0.0.1:8000";
 
 /* =========================================================
-   API RESPONSE HELPER
+   API REQUEST
+   App.jsx authFetch already returns parsed JSON.
 ========================================================= */
 
 const apiRequest = async (
   url,
   options = {}
 ) => {
-  const result = await authFetch(
-    url,
-    options
-  );
+  try {
+    return await authFetch(
+      url,
+      options
+    );
+  } catch (error) {
+    console.error(
+      "API request failed:",
+      error
+    );
 
-  /*
-    App.jsx authFetch already returns
-    parsed JSON.
-
-    This extra check also supports a
-    native Response object safely.
-  */
-  if (
-    result &&
-    typeof result.json === "function"
-  ) {
-    const data =
-      await result.json().catch(
-        () => null
-      );
-
-    if (result.ok === false) {
-      throw new Error(
-        data?.detail ||
-          `Request failed with status ${result.status}`
-      );
-    }
-
-    return data;
+    throw new Error(
+      error?.message ||
+        "Unable to connect to railway backend."
+    );
   }
-
-  return result;
 };
 
 /* =========================================================
-   HELPERS
+   BASIC HELPERS
 ========================================================= */
+
+const normalizeArray = (value) => {
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (
+    value?.data &&
+    Array.isArray(value.data)
+  ) {
+    return value.data;
+  }
+
+  if (
+    value?.items &&
+    Array.isArray(value.items)
+  ) {
+    return value.items;
+  }
+
+  if (
+    value?.results &&
+    Array.isArray(value.results)
+  ) {
+    return value.results;
+  }
+
+  if (
+    value?.blocks &&
+    Array.isArray(value.blocks)
+  ) {
+    return value.blocks;
+  }
+
+  if (
+    value?.schedules &&
+    Array.isArray(value.schedules)
+  ) {
+    return value.schedules;
+  }
+
+  if (
+    value?.train_schedule &&
+    Array.isArray(
+      value.train_schedule
+    )
+  ) {
+    return value.train_schedule;
+  }
+
+  if (
+    value?.recommendations &&
+    Array.isArray(
+      value.recommendations
+    )
+  ) {
+    return value.recommendations;
+  }
+
+  if (
+    value?.decisions &&
+    Array.isArray(
+      value.decisions
+    )
+  ) {
+    return value.decisions;
+  }
+
+  if (
+    value?.tasks &&
+    Array.isArray(value.tasks)
+  ) {
+    return value.tasks;
+  }
+
+  return [];
+};
+
+const normalizeStatus = (value) => {
+  return String(
+    value ?? ""
+  )
+    .trim()
+    .toUpperCase();
+};
 
 const formatTime = (value) => {
   if (!value) {
     return "—";
   }
 
-  const text = String(value);
+  return String(value).slice(0, 5);
+};
 
-  return text.length >= 5
-    ? text.slice(0, 5)
-    : text;
+const toHHMM = (value) => {
+  if (!value) {
+    return "";
+  }
+
+  const text = String(value).trim();
+
+  const match = text.match(
+    /^(\d{1,2}):(\d{2})(?::\d{2})?$/
+  );
+
+  if (!match) {
+    return "";
+  }
+
+  return `${match[1].padStart(
+    2,
+    "0"
+  )}:${match[2]}`;
 };
 
 const dateToKey = (value) => {
@@ -74,13 +168,12 @@ const dateToKey = (value) => {
 
   const text = String(value);
 
-  const directMatch =
-    text.match(
-      /^(\d{4})-(\d{2})-(\d{2})/
-    );
+  const match = text.match(
+    /^(\d{4})-(\d{2})-(\d{2})/
+  );
 
-  if (directMatch) {
-    return directMatch[0];
+  if (match) {
+    return match[0];
   }
 
   const date = new Date(value);
@@ -111,13 +204,13 @@ const formatDate = (value) => {
     return "—";
   }
 
-  const directMatch =
+  const direct =
     String(value).match(
       /^(\d{4})-(\d{2})-(\d{2})/
     );
 
-  if (directMatch) {
-    return `${directMatch[3]}-${directMatch[2]}-${directMatch[1]}`;
+  if (direct) {
+    return `${direct[3]}-${direct[2]}-${direct[1]}`;
   }
 
   const date = new Date(value);
@@ -202,15 +295,11 @@ const getErrorMessage = (
     return fallback;
   }
 
-  if (
-    error instanceof Error
-  ) {
+  if (error instanceof Error) {
     return error.message;
   }
 
-  if (
-    typeof error === "string"
-  ) {
+  if (typeof error === "string") {
     return error;
   }
 
@@ -240,86 +329,33 @@ const getErrorMessage = (
 };
 
 /* =========================================================
-   NORMALIZE API ARRAYS
+   BLOCK STATUS HELPERS
+
+   Active means only:
+   PLANNED
+   APPROVED
+   IN_PROGRESS
+
+   COMPLETED and CANCELLED are NOT active.
 ========================================================= */
 
-const normalizeArray = (
-  value
-) => {
-  if (Array.isArray(value)) {
-    return value;
-  }
+const ACTIVE_BLOCK_STATUSES = [
+  "PLANNED",
+  "APPROVED",
+  "IN_PROGRESS",
+];
 
-  if (
-    value &&
-    Array.isArray(value.data)
-  ) {
-    return value.data;
-  }
+const isActiveBlock = (block) => {
+  return ACTIVE_BLOCK_STATUSES.includes(
+    normalizeStatus(block?.status)
+  );
+};
 
-  if (
-    value &&
-    Array.isArray(value.items)
-  ) {
-    return value.items;
-  }
-
-  if (
-    value &&
-    Array.isArray(value.results)
-  ) {
-    return value.results;
-  }
-
-  if (
-    value &&
-    Array.isArray(value.blocks)
-  ) {
-    return value.blocks;
-  }
-
-  if (
-    value &&
-    Array.isArray(value.schedules)
-  ) {
-    return value.schedules;
-  }
-
-  if (
-    value &&
-    Array.isArray(
-      value.train_schedule
-    )
-  ) {
-    return value.train_schedule;
-  }
-
-  if (
-    value &&
-    Array.isArray(
-      value.recommendations
-    )
-  ) {
-    return value.recommendations;
-  }
-
-  if (
-    value &&
-    Array.isArray(
-      value.decisions
-    )
-  ) {
-    return value.decisions;
-  }
-
-  if (
-    value &&
-    Array.isArray(value.tasks)
-  ) {
-    return value.tasks;
-  }
-
-  return [];
+const isCancelledBlock = (block) => {
+  return (
+    normalizeStatus(block?.status) ===
+    "CANCELLED"
+  );
 };
 
 /* =========================================================
@@ -418,10 +454,6 @@ const getRecommendationTaskIds = (
   return [];
 };
 
-/* =========================================================
-   BLOCK TASK HELPERS
-========================================================= */
-
 const getBlockTaskIds = (
   block
 ) => {
@@ -473,7 +505,6 @@ const getBlockTaskIds = (
 ========================================================= */
 
 function Timeline() {
-
   /* =======================================================
      DATA
   ======================================================= */
@@ -520,7 +551,7 @@ function Timeline() {
     timelineDate,
     setTimelineDate,
   ] = useState(
-    "2026-09-02"
+    "2026-09-04"
   );
 
   const [
@@ -609,20 +640,24 @@ function Timeline() {
           trainsData,
           tasksData,
           decisionsData,
-        ] = await Promise.all([
-          apiRequest(
-            `${API_BASE}/planner/blocks`
-          ),
-          apiRequest(
-            `${API_BASE}/train-schedule`
-          ),
-          apiRequest(
-            `${API_BASE}/maintenance-tasks`
-          ),
-          apiRequest(
-            `${API_BASE}/ai/decisions`
-          ),
-        ]);
+        ] =
+          await Promise.all([
+            apiRequest(
+              `${API_BASE}/planner/blocks`
+            ),
+
+            apiRequest(
+              `${API_BASE}/train-schedule`
+            ),
+
+            apiRequest(
+              `${API_BASE}/maintenance-tasks`
+            ),
+
+            apiRequest(
+              `${API_BASE}/ai/decisions`
+            ),
+          ]);
 
         setBlocks(
           normalizeArray(
@@ -647,7 +682,6 @@ function Timeline() {
             decisionsData
           )
         );
-
       } catch (err) {
         console.error(
           "Timeline load error:",
@@ -660,7 +694,6 @@ function Timeline() {
             "Unable to load timeline data."
           )
         );
-
       } finally {
         setLoading(false);
       }
@@ -671,11 +704,10 @@ function Timeline() {
   }, []);
 
   /* =======================================================
-     AUTO DATE RANGE
+     DATE RANGE
   ======================================================= */
 
   useEffect(() => {
-
     const dayCount =
       planningMode ===
       "MONTHLY"
@@ -688,7 +720,6 @@ function Timeline() {
         dayCount
       )
     );
-
   }, [
     planningMode,
     planningStartDate,
@@ -700,7 +731,6 @@ function Timeline() {
 
   const taskMap =
     useMemo(() => {
-
       const map = {};
 
       maintenanceTasks.forEach(
@@ -714,7 +744,6 @@ function Timeline() {
       );
 
       return map;
-
     }, [
       maintenanceTasks,
     ]);
@@ -725,31 +754,25 @@ function Timeline() {
 
   const aiDecisionMap =
     useMemo(() => {
-
       const map = {};
 
       aiDecisions.forEach(
         (decision) => {
-
           if (
             decision?.task_id !==
               undefined &&
             decision?.task_id !== null
           ) {
-
             map[
               String(
                 decision.task_id
               )
             ] = decision;
-
           }
-
         }
       );
 
       return map;
-
     }, [
       aiDecisions,
     ]);
@@ -760,13 +783,8 @@ function Timeline() {
 
   const generateHorizonPlan =
     async () => {
-
       try {
-
-        setPlanningLoading(
-          true
-        );
-
+        setPlanningLoading(true);
         setPlanningError("");
         setHorizonPlan(null);
 
@@ -800,8 +818,10 @@ function Timeline() {
               body: JSON.stringify({
                 start_date:
                   planningStartDate,
+
                 end_date:
                   planningEndDate,
+
                 horizon:
                   planningMode,
               }),
@@ -810,19 +830,16 @@ function Timeline() {
 
         if (
           !data ||
-          typeof data !== "object"
+          typeof data !==
+            "object"
         ) {
           throw new Error(
             "Invalid response received from horizon planner."
           );
         }
 
-        setHorizonPlan(
-          data
-        );
-
+        setHorizonPlan(data);
       } catch (err) {
-
         console.error(
           "Horizon plan error:",
           err
@@ -834,12 +851,8 @@ function Timeline() {
             "Unable to generate maintenance plan."
           )
         );
-
       } finally {
-
-        setPlanningLoading(
-          false
-        );
+        setPlanningLoading(false);
       }
     };
 
@@ -850,7 +863,6 @@ function Timeline() {
   const openReview = (
     recommendation
   ) => {
-
     setSelectedRecommendation(
       recommendation
     );
@@ -860,10 +872,7 @@ function Timeline() {
   };
 
   const closeReview = () => {
-
-    if (
-      approvalLoading
-    ) {
+    if (approvalLoading) {
       return;
     }
 
@@ -881,7 +890,6 @@ function Timeline() {
 
   const approveAndCreateBlock =
     async () => {
-
       if (
         !selectedRecommendation
       ) {
@@ -896,14 +904,29 @@ function Timeline() {
           recommendation
         );
 
+      const startTime =
+        toHHMM(
+          recommendation.start_time
+        );
+
+      const endTime =
+        toHHMM(
+          recommendation.end_time
+        );
+
+      const blockDate =
+        dateToKey(
+          recommendation.schedule_date ??
+            recommendation.date
+        );
+
       if (
         !recommendation.section_id ||
-        !recommendation.schedule_date ||
-        !recommendation.start_time ||
-        !recommendation.end_time ||
+        !blockDate ||
+        !startTime ||
+        !endTime ||
         taskIds.length === 0
       ) {
-
         setApprovalError(
           "This recommendation does not contain enough information to create a block."
         );
@@ -912,11 +935,7 @@ function Timeline() {
       }
 
       try {
-
-        setApprovalLoading(
-          true
-        );
-
+        setApprovalLoading(true);
         setApprovalError("");
         setApprovalSuccess("");
 
@@ -932,29 +951,34 @@ function Timeline() {
 
         params.set(
           "block_date",
-          dateToKey(
-            recommendation.schedule_date
-          )
+          blockDate
         );
 
         params.set(
           "start_time",
-          formatTime(
-            recommendation.start_time
-          )
+          startTime
         );
 
         params.set(
           "end_time",
-          formatTime(
-            recommendation.end_time
-          )
+          endTime
+        );
+
+        params.set(
+          "admin",
+          "Abhishek Pal"
         );
 
         const numericTaskIds =
-          taskIds.map(
-            (id) => Number(id)
-          );
+          taskIds
+            .map(
+              (id) =>
+                Number(id)
+            )
+            .filter(
+              (id) =>
+                !Number.isNaN(id)
+            );
 
         const data =
           await apiRequest(
@@ -977,9 +1001,7 @@ function Timeline() {
         );
 
         await loadTimelineData();
-
       } catch (err) {
-
         console.error(
           "Approve block error:",
           err
@@ -991,12 +1013,8 @@ function Timeline() {
             "Unable to create maintenance block."
           )
         );
-
       } finally {
-
-        setApprovalLoading(
-          false
-        );
+        setApprovalLoading(false);
       }
     };
 
@@ -1006,7 +1024,6 @@ function Timeline() {
 
   const planDays =
     useMemo(() => {
-
       return [
         ...getHorizonDays(
           horizonPlan
@@ -1023,7 +1040,6 @@ function Timeline() {
             )
           )
       );
-
     }, [
       horizonPlan,
     ]);
@@ -1087,19 +1103,16 @@ function Timeline() {
   const unscheduledTasks =
     planSummary.unscheduled ??
     horizonPlan?.unscheduled ??
-    (
-      Array.isArray(
-        horizonPlan?.unscheduled_tasks
-      )
-        ? horizonPlan
-            .unscheduled_tasks
-            .length
-        : 0
-    );
+    (Array.isArray(
+      horizonPlan?.unscheduled_tasks
+    )
+      ? horizonPlan
+          .unscheduled_tasks
+          .length
+      : 0);
 
   const forecastAwareDays =
     useMemo(() => {
-
       return planDays.filter(
         (day) =>
           getDayRecommendations(
@@ -1111,7 +1124,6 @@ function Timeline() {
               true
           )
       );
-
     }, [
       planDays,
     ]);
@@ -1122,7 +1134,6 @@ function Timeline() {
 
   const monthlyWeeks =
     useMemo(() => {
-
       if (
         planningMode !==
         "MONTHLY"
@@ -1137,18 +1148,15 @@ function Timeline() {
         index < planDays.length;
         index += 7
       ) {
-
         weeks.push(
           planDays.slice(
             index,
             index + 7
           )
         );
-
       }
 
       return weeks;
-
     }, [
       planDays,
       planningMode,
@@ -1160,7 +1168,6 @@ function Timeline() {
 
   const allBlocksForDate =
     useMemo(() => {
-
       return blocks
         .filter(
           (block) =>
@@ -1184,19 +1191,25 @@ function Timeline() {
                 b.from_time
             )
         );
-
     }, [
       blocks,
       timelineDate,
     ]);
 
+  /*
+    FIX:
+    Only PLANNED / APPROVED / IN_PROGRESS
+    are treated as active.
+
+    COMPLETED is historical, therefore
+    it must NOT appear in Active view.
+  */
   const activeBlocksForDate =
     useMemo(
       () =>
         allBlocksForDate.filter(
           (block) =>
-            block.status !==
-            "CANCELLED"
+            isActiveBlock(block)
         ),
       [
         allBlocksForDate,
@@ -1208,8 +1221,7 @@ function Timeline() {
       () =>
         allBlocksForDate.filter(
           (block) =>
-            block.status ===
-            "CANCELLED"
+            isCancelledBlock(block)
         ),
       [
         allBlocksForDate,
@@ -1231,7 +1243,6 @@ function Timeline() {
 
   const trainsForDate =
     useMemo(() => {
-
       return trainSchedule
         .filter(
           (train) =>
@@ -1245,77 +1256,62 @@ function Timeline() {
         .sort(
           (a, b) =>
             parseTime(
-              a.departure_time ??
-                a.departure ??
+              a.arrival_time ??
+                a.arrival ??
                 a.start_time ??
                 a.time
             ) -
             parseTime(
-              b.departure_time ??
-                b.departure ??
+              b.arrival_time ??
+                b.arrival ??
                 b.start_time ??
                 b.time
             )
         );
-
     }, [
       trainSchedule,
       timelineDate,
     ]);
 
   /* =======================================================
-     TIMELINE CONSTANTS
+     TIMELINE
   ======================================================= */
 
-  const timelineStartHour =
-    8;
-
-  const timelineEndHour =
-    20;
+  const timelineStartHour = 8;
+  const timelineEndHour = 20;
 
   const timelineDuration =
-    (
-      timelineEndHour -
-      timelineStartHour
-    ) *
+    (timelineEndHour -
+      timelineStartHour) *
     60;
 
   const timelineHours =
     useMemo(() => {
-
       const hours = [];
 
       for (
         let hour =
           timelineStartHour;
         hour <=
-          timelineEndHour;
+        timelineEndHour;
         hour += 1
       ) {
-
         hours.push(hour);
-
       }
 
       return hours;
-
     }, []);
 
   const getTimelinePosition =
     (time) => {
-
       const minutes =
         parseTime(time);
 
       const position =
-        (
-          (
-            minutes -
-            timelineStartHour *
-              60
-          ) /
-          timelineDuration
-        ) *
+        ((minutes -
+          timelineStartHour *
+            60) /
+          timelineDuration) *
         100;
 
       return Math.max(
@@ -1334,7 +1330,6 @@ function Timeline() {
   const getBlockAiData = (
     block
   ) => {
-
     const taskIds =
       getBlockTaskIds(
         block
@@ -1357,24 +1352,16 @@ function Timeline() {
       return null;
     }
 
-    /*
-      Highest AI decision score is
-      shown for a multi-task block.
-    */
     return [
       ...decisions,
     ].sort(
       (a, b) =>
-        (
-          Number(
-            b.ai_decision_score
-          ) || 0
-        ) -
-        (
-          Number(
-            a.ai_decision_score
-          ) || 0
-        )
+        (Number(
+          b.ai_decision_score
+        ) || 0) -
+        (Number(
+          a.ai_decision_score
+        ) || 0)
     )[0];
   };
 
@@ -1385,7 +1372,6 @@ function Timeline() {
   const getBlockTaskLabels = (
     block
   ) => {
-
     return getBlockTaskIds(
       block
     ).map(
@@ -1394,247 +1380,218 @@ function Timeline() {
           ?.task_code ??
         `Task ${id}`
     );
-
   };
 
   /* =======================================================
-     RENDER RECOMMENDED BLOCK
+     RECOMMENDED BLOCK
   ======================================================= */
 
-  const renderRecommendedBlock =
-    (
-      recommendation,
-      index
-    ) => {
-
-      const taskIds =
-        getRecommendationTaskIds(
-          recommendation
-        );
-
-      const startTime =
-        formatTime(
-          recommendation.start_time
-        );
-
-      const endTime =
-        formatTime(
-          recommendation.end_time
-        );
-
-      const duration =
-        recommendation.duration_hours ??
-        getDurationHours(
-          startTime,
-          endTime
-        );
-
-      const reason =
-        recommendation.reason ||
-        recommendation.planning_reason ||
-        recommendation.explanation ||
-        "AI-generated maintenance recommendation.";
-
-      const goodsAware =
+  const renderRecommendedBlock = (
+    recommendation,
+    index
+  ) => {
+    const taskIds =
+      getRecommendationTaskIds(
         recommendation
-          .goods_forecast_considered ===
-        true;
+      );
 
-      const goodsCount =
-        recommendation
-          .expected_goods_trains ??
-        0;
+    const startTime =
+      formatTime(
+        recommendation.start_time
+      );
 
-      return (
-        <div
-          className="planned-block"
-          key={`${index}-${dateToKey(
-            recommendation.schedule_date
-          )}`}
-        >
+    const endTime =
+      formatTime(
+        recommendation.end_time
+      );
 
-          <div className="planned-time">
+    const duration =
+      recommendation.duration_hours ??
+      getDurationHours(
+        startTime,
+        endTime
+      );
 
-            <strong>
-              {startTime}
-              {" – "}
-              {endTime}
-            </strong>
+    const reason =
+      recommendation.reason ||
+      recommendation.planning_reason ||
+      recommendation.explanation ||
+      "AI-generated maintenance recommendation.";
 
-            <span>
-              {duration}h
-            </span>
+    const goodsAware =
+      recommendation
+        .goods_forecast_considered ===
+      true;
 
+    const goodsCount =
+      recommendation
+        .expected_goods_trains ??
+      0;
+
+    return (
+      <div
+        className="planned-block"
+        key={`${index}-${dateToKey(
+          recommendation.schedule_date ??
+            recommendation.date
+        )}`}
+      >
+        <div className="planned-time">
+          <strong>
+            {startTime}
+            {" – "}
+            {endTime}
+          </strong>
+
+          <span>
+            {duration}h
+          </span>
+        </div>
+
+        <div className="planned-details">
+          <div className="planned-section">
+            Section{" "}
+            {
+              recommendation.section_id
+            }
           </div>
 
-          <div className="planned-details">
-
-            <div className="planned-section">
-              Section{" "}
-              {
-                recommendation.section_id
-              }
-            </div>
-
-            <div className="planned-task-list">
-
-              {taskIds.map(
-                (taskId) => (
-
-                  <span
-                    className="planned-task-tag"
-                    key={
-                      taskId
-                    }
-                  >
-                    {
-                      taskMap[
-                        String(
-                          taskId
-                        )
-                      ]
-                        ?.task_code ??
-                      `Task ${taskId}`}
-                  </span>
-
-                )
-              )}
-
-            </div>
-
-            <p className="planned-block-reason">
-              {reason}
-            </p>
-
-            <div className="timeline-ai-inline">
-
-              <span>
-                🧠 AI Planning
-              </span>
-
-              {recommendation
-                .ml_risk_percentage !==
-                undefined && (
-
-                <strong>
-                  ML Risk{" "}
-                  {
-                    recommendation.ml_risk_percentage
+          <div className="planned-task-list">
+            {taskIds.map(
+              (taskId) => (
+                <span
+                  className="planned-task-tag"
+                  key={
+                    taskId
                   }
-                  %
-                </strong>
-
-              )}
-
-              {recommendation
-                .ml_risk_level && (
-
-                <strong>
+                >
                   {
-                    recommendation.ml_risk_level
+                    taskMap[
+                      String(
+                        taskId
+                      )
+                    ]
+                      ?.task_code ??
+                    `Task ${taskId}`
                   }
-                </strong>
-
-              )}
-
-              {recommendation
-                .planning_score !==
-                undefined && (
-
-                <strong>
-                  Plan Score{" "}
-                  {
-                    recommendation.planning_score
-                  }
-                </strong>
-
-              )}
-
-            </div>
-
-            {goodsAware && (
-
-              <div className="planned-goods-forecast">
-
-                <span className="planned-goods-icon">
-                  🚆
                 </span>
+              )
+            )}
+          </div>
 
-                <div>
+          <p className="planned-block-reason">
+            {reason}
+          </p>
 
-                  <strong>
-                    Goods Forecast Considered
-                  </strong>
+          <div className="timeline-ai-inline">
+            <span>
+              🧠 AI Planning
+            </span>
 
-                  <span>
-                    {
-                      goodsCount
-                    } expected goods
-                    train
-                    {
-                      Number(
-                        goodsCount
-                      ) === 1
-                        ? ""
-                        : "s"
-                    }
-
-                    {recommendation
-                      .goods_traffic_level &&
-                      ` • ${recommendation.goods_traffic_level}`}
-                  </span>
-
-                </div>
-
-              </div>
-
+            {recommendation
+              .ml_risk_percentage !==
+              undefined && (
+              <strong>
+                ML Risk{" "}
+                {
+                  recommendation
+                    .ml_risk_percentage
+                }%
+              </strong>
             )}
 
-          </div>
-
-          <div className="planned-actions">
-
-            <span className="planned-recommended-badge">
-              ✓ Recommended
-            </span>
-
-            <small>
-              {taskIds.length}
-              {" "}
-              task
-              {taskIds.length ===
-              1
-                ? ""
-                : "s"}
-            </small>
-
-            <button
-              type="button"
-              className="timeline-review-button"
-              onClick={() =>
-                openReview(
+            {recommendation
+              .ml_risk_level && (
+              <strong>
+                {
                   recommendation
-                )
-              }
-            >
-              Review
-            </button>
+                    .ml_risk_level
+                }
+              </strong>
+            )}
 
+            {recommendation
+              .planning_score !==
+              undefined && (
+              <strong>
+                Plan Score{" "}
+                {
+                  recommendation
+                    .planning_score
+                }
+              </strong>
+            )}
           </div>
 
+          {goodsAware && (
+            <div className="planned-goods-forecast">
+              <span className="planned-goods-icon">
+                🚆
+              </span>
+
+              <div>
+                <strong>
+                  Goods Forecast
+                  Considered
+                </strong>
+
+                <span>
+                  {goodsCount}{" "}
+                  expected goods
+                  train
+                  {Number(
+                    goodsCount
+                  ) === 1
+                    ? ""
+                    : "s"}
+
+                  {recommendation
+                    .goods_traffic_level &&
+                    ` • ${recommendation.goods_traffic_level}`}
+                </span>
+              </div>
+            </div>
+          )}
         </div>
-      );
-    };
+
+        <div className="planned-actions">
+          <span className="planned-recommended-badge">
+            ✓ Recommended
+          </span>
+
+          <small>
+            {taskIds.length}{" "}
+            task
+            {taskIds.length ===
+            1
+              ? ""
+              : "s"}
+          </small>
+
+          <button
+            type="button"
+            className="timeline-review-button"
+            onClick={() =>
+              openReview(
+                recommendation
+              )
+            }
+          >
+            Review
+          </button>
+        </div>
+      </div>
+    );
+  };
 
   /* =======================================================
-     RENDER DAY PLAN
+     DAY PLAN
   ======================================================= */
 
   const renderDayPlan = (
     day,
     index
   ) => {
-
     const dayDate =
       dateToKey(
         day.schedule_date ??
@@ -1688,12 +1645,10 @@ function Timeline() {
           recommendation
         ) =>
           total +
-          (
-            Number(
-              recommendation
-                .expected_goods_trains
-            ) || 0
-          ),
+          (Number(
+            recommendation
+              .expected_goods_trains
+          ) || 0),
         0
       );
 
@@ -1707,11 +1662,8 @@ function Timeline() {
         }`}
         key={`${dayDate}-${index}`}
       >
-
         <div className="timeline-day-header">
-
           <div>
-
             <strong>
               {
                 formatDate(
@@ -1725,39 +1677,30 @@ function Timeline() {
                 recommendations.length
               }{" "}
               blocks •{" "}
-              {dayTaskCount}
-              {" "}
-              tasks •{" "}
+              {dayTaskCount} tasks
+              •{" "}
               {totalDayHours}h
               planned
             </span>
-
           </div>
 
           <div className="timeline-day-header-right">
-
             {hasGoods && (
-
               <span className="timeline-goods-badge">
                 🚆 Goods{" "}
                 {goodsCount}
               </span>
-
             )}
 
             <span className="timeline-day-label">
               DAY PLAN
             </span>
-
           </div>
-
         </div>
 
         {recommendations.length >
         0 ? (
-
           <div className="timeline-day-blocks">
-
             {recommendations.map(
               (
                 recommendation,
@@ -1768,19 +1711,14 @@ function Timeline() {
                   `${index}-${recommendationIndex}`
                 )
             )}
-
           </div>
-
         ) : (
-
           <div className="timeline-empty-day">
             No recommended
             maintenance block for
             this day.
           </div>
-
         )}
-
       </div>
     );
   };
@@ -1790,34 +1728,25 @@ function Timeline() {
   ======================================================= */
 
   if (loading) {
-
     return (
       <div className="timeline-page">
-
         <div className="timeline-loading">
-
           <div className="timeline-loader" />
-
           Loading railway
           timeline...
-
         </div>
-
       </div>
     );
   }
 
   return (
     <div className="timeline-page">
-
       {/* =================================================
           HERO
       ================================================= */}
 
       <div className="timeline-hero">
-
         <div>
-
           <span className="timeline-eyebrow">
             RAILWAY OPERATIONS CONTROL
           </span>
@@ -1828,22 +1757,18 @@ function Timeline() {
 
           <p>
             Monitor AI-generated
-            maintenance plans, active
-            blocks, ML risk, AI decisions,
-            train movements and goods
+            maintenance plans,
+            active blocks, ML risk,
+            AI decisions, train
+            movements and goods
             traffic constraints.
           </p>
-
         </div>
 
         <div className="timeline-live">
-
           <span className="timeline-live-dot" />
-
           Live Operations
-
         </div>
-
       </div>
 
       {/* ERROR */}
@@ -1859,13 +1784,11 @@ function Timeline() {
       ================================================= */}
 
       <section className="timeline-planner-card">
-
         <div className="timeline-planner-header">
-
           <div>
-
             <span className="timeline-eyebrow">
-              AI MAINTENANCE PLANNING
+              AI MAINTENANCE
+              PLANNING
             </span>
 
             <h2>
@@ -1873,17 +1796,16 @@ function Timeline() {
             </h2>
 
             <p>
-              Generate weekly or monthly
-              maintenance plans using
-              maintenance priority, asset
-              risk, train constraints and
+              Generate weekly or
+              monthly maintenance
+              plans using maintenance
+              priority, asset risk,
+              train constraints and
               goods forecast data.
             </p>
-
           </div>
 
           <div className="timeline-mode-switch">
-
             <button
               type="button"
               className={
@@ -1917,15 +1839,11 @@ function Timeline() {
             >
               Monthly
             </button>
-
           </div>
-
         </div>
 
         <div className="timeline-planner-controls">
-
           <div className="timeline-field">
-
             <label>
               Start Date
             </label>
@@ -1941,11 +1859,9 @@ function Timeline() {
                 )
               }
             />
-
           </div>
 
           <div className="timeline-field">
-
             <label>
               End Date
             </label>
@@ -1961,7 +1877,6 @@ function Timeline() {
                 )
               }
             />
-
           </div>
 
           <button
@@ -1983,20 +1898,14 @@ function Timeline() {
                     : "Weekly"
                 } Plan`}
           </button>
-
         </div>
 
         {planningError && (
-
           <div className="timeline-planning-error">
             ⚠{" "}
-            {
-              planningError
-            }
+            {planningError}
           </div>
-
         )}
-
       </section>
 
       {/* =================================================
@@ -2004,22 +1913,15 @@ function Timeline() {
       ================================================= */}
 
       {horizonPlan && (
-
         <>
-
           <section className="timeline-planning-summary">
-
             <div className="timeline-summary-heading">
-
               <div>
-
                 <span className="timeline-eyebrow">
-                  {
-                    planningMode ===
-                    "MONTHLY"
-                      ? "MONTHLY PLAN"
-                      : "WEEKLY PLAN"
-                  }
+                  {planningMode ===
+                  "MONTHLY"
+                    ? "MONTHLY PLAN"
+                    : "WEEKLY PLAN"}
                 </span>
 
                 <h2>
@@ -2035,26 +1937,23 @@ function Timeline() {
                     )
                   }
                 </h2>
-
               </div>
 
               <span className="timeline-horizon-badge">
-                {
-                  planningMode ===
-                  "MONTHLY"
-                    ? "30 Days"
-                    : "7 Days"
-                }
+                {planningMode ===
+                "MONTHLY"
+                  ? "30 Days"
+                  : "7 Days"}
               </span>
-
             </div>
 
             <div className="timeline-stats">
-
               <div className="timeline-stat-card">
                 <span>
-                  Tasks Considered
+                  Tasks
+                  Considered
                 </span>
+
                 <strong>
                   {
                     totalTasksConsidered
@@ -2064,8 +1963,10 @@ function Timeline() {
 
               <div className="timeline-stat-card">
                 <span>
-                  Tasks Planned
+                  Tasks
+                  Planned
                 </span>
+
                 <strong>
                   {
                     totalTasksPlanned
@@ -2077,6 +1978,7 @@ function Timeline() {
                 <span>
                   AI Blocks
                 </span>
+
                 <strong>
                   {
                     totalPlannedBlocks
@@ -2088,6 +1990,7 @@ function Timeline() {
                 <span>
                   Planned Hours
                 </span>
+
                 <strong>
                   {
                     plannedHours
@@ -2099,6 +2002,7 @@ function Timeline() {
                 <span>
                   Unscheduled
                 </span>
+
                 <strong>
                   {
                     unscheduledTasks
@@ -2108,33 +2012,29 @@ function Timeline() {
 
               <div className="timeline-stat-card timeline-forecast-stat">
                 <span>
-                  Forecast-aware Days
+                  Forecast-aware
+                  Days
                 </span>
+
                 <strong>
                   {
                     forecastAwareDays.length
                   }
                 </strong>
               </div>
-
             </div>
-
           </section>
 
           {/* WEEKLY */}
 
           {planningMode ===
             "WEEKLY" && (
-
             <section className="timeline-section-card">
-
               <div className="timeline-section-heading">
-
                 <div>
-
                   <h2>
-                    🗓️ Weekly Maintenance
-                    Plan
+                    🗓️ Weekly
+                    Maintenance Plan
                   </h2>
 
                   <p>
@@ -2143,7 +2043,6 @@ function Timeline() {
                     for the selected
                     horizon.
                   </p>
-
                 </div>
 
                 <span className="timeline-count-badge">
@@ -2152,11 +2051,9 @@ function Timeline() {
                   }{" "}
                   Planned Blocks
                 </span>
-
               </div>
 
               <div className="timeline-day-list">
-
                 {planDays.length >
                 0
                   ? planDays.map(
@@ -2172,40 +2069,32 @@ function Timeline() {
                   : (
                     <div className="timeline-empty">
                       No planning days
-                      returned by the AI
-                      planner.
+                      returned by the
+                      AI planner.
                     </div>
                   )}
-
               </div>
-
             </section>
-
           )}
 
           {/* MONTHLY */}
 
           {planningMode ===
             "MONTHLY" && (
-
             <section className="timeline-section-card">
-
               <div className="timeline-section-heading">
-
                 <div>
-
                   <h2>
-                    🗓️ Monthly Maintenance
-                    Plan
+                    🗓️ Monthly
+                    Maintenance Plan
                   </h2>
 
                   <p>
                     AI-generated
                     maintenance plan
-                    grouped by operational
-                    weeks.
+                    grouped by
+                    operational weeks.
                   </p>
-
                 </div>
 
                 <span className="timeline-count-badge">
@@ -2214,28 +2103,22 @@ function Timeline() {
                   }{" "}
                   Planned Blocks
                 </span>
-
               </div>
 
               <div className="timeline-month-list">
-
                 {monthlyWeeks.map(
                   (
                     week,
                     weekIndex
                   ) => (
-
                     <div
                       className="timeline-week-plan"
                       key={
                         `week-${weekIndex}`
                       }
                     >
-
                       <div className="timeline-week-header">
-
                         <div>
-
                           <strong>
                             Week{" "}
                             {
@@ -2248,21 +2131,18 @@ function Timeline() {
                             {
                               week.length
                             }{" "}
-                            planning days
+                            planning
+                            days
                           </span>
-
                         </div>
-
                       </div>
 
                       <div className="timeline-week-days">
-
                         {week.map(
                           (
                             day,
                             dayIndex
                           ) => {
-
                             const dayDate =
                               dateToKey(
                                 day.schedule_date ??
@@ -2275,14 +2155,11 @@ function Timeline() {
                               );
 
                             return (
-
                               <div
                                 className="timeline-month-day"
                                 key={`${dayDate}-${dayIndex}`}
                               >
-
                                 <div className="timeline-month-day-header">
-
                                   <strong>
                                     {
                                       formatDate(
@@ -2297,11 +2174,9 @@ function Timeline() {
                                     }{" "}
                                     blocks
                                   </span>
-
                                 </div>
 
                                 <div className="timeline-month-day-content">
-
                                   {recommendations.length >
                                   0
                                     ? recommendations.map(
@@ -2317,29 +2192,21 @@ function Timeline() {
                                     : (
                                       <div className="timeline-month-empty">
                                         No maintenance
-                                        block planned.
+                                        block
+                                        planned.
                                       </div>
                                     )}
-
                                 </div>
-
                               </div>
-
                             );
                           }
                         )}
-
                       </div>
-
                     </div>
-
                   )
                 )}
-
               </div>
-
             </section>
-
           )}
 
           {/* UNSCHEDULED */}
@@ -2351,15 +2218,12 @@ function Timeline() {
               .unscheduled_tasks
               .length >
               0 && (
-
               <section className="timeline-unscheduled">
-
                 <div className="timeline-section-heading">
-
                   <div>
-
                     <h2>
-                      ⚠ Unscheduled Tasks
+                      ⚠ Unscheduled
+                      Tasks
                     </h2>
 
                     <p>
@@ -2368,19 +2232,15 @@ function Timeline() {
                       placed inside the
                       selected horizon.
                     </p>
-
                   </div>
-
                 </div>
 
                 <div className="timeline-unscheduled-list">
-
                   {horizonPlan.unscheduled_tasks.map(
                     (
                       task,
                       index
                     ) => (
-
                       <div
                         className="timeline-unscheduled-item"
                         key={
@@ -2388,7 +2248,6 @@ function Timeline() {
                           index
                         }
                       >
-
                         <strong>
                           {
                             task?.task_code ??
@@ -2406,20 +2265,13 @@ function Timeline() {
                             "No feasible window found."
                           }
                         </span>
-
                       </div>
-
                     )
                   )}
-
                 </div>
-
               </section>
-
             )}
-
         </>
-
       )}
 
       {/* =================================================
@@ -2427,11 +2279,8 @@ function Timeline() {
       ================================================= */}
 
       <section className="timeline-existing-section">
-
         <div className="timeline-section-heading">
-
           <div>
-
             <span className="timeline-eyebrow">
               ACTUAL OPERATIONS
             </span>
@@ -2442,22 +2291,19 @@ function Timeline() {
             </h2>
 
             <p>
-              Compare maintenance blocks,
-              ML risk and AI decisions
-              against scheduled train
+              Compare maintenance
+              blocks, ML risk and AI
+              decisions against
+              scheduled train
               movements.
             </p>
-
           </div>
-
         </div>
 
         {/* CONTROLS */}
 
         <div className="timeline-control-row">
-
           <div className="timeline-field timeline-date-field">
-
             <label>
               Timeline Date
             </label>
@@ -2473,11 +2319,9 @@ function Timeline() {
                 )
               }
             />
-
           </div>
 
           <div className="timeline-view-filter">
-
             <span>
               Block View
             </span>
@@ -2532,17 +2376,13 @@ function Timeline() {
             >
               Cancelled
             </button>
-
           </div>
-
         </div>
 
         {/* SUMMARY */}
 
         <div className="timeline-existing-summary">
-
           <div>
-
             <span>
               Active Blocks
             </span>
@@ -2552,11 +2392,9 @@ function Timeline() {
                 activeBlocksForDate.length
               }
             </strong>
-
           </div>
 
           <div>
-
             <span>
               All Blocks
             </span>
@@ -2566,11 +2404,9 @@ function Timeline() {
                 allBlocksForDate.length
               }
             </strong>
-
           </div>
 
           <div>
-
             <span>
               Cancelled
             </span>
@@ -2580,11 +2416,9 @@ function Timeline() {
                 cancelledBlocksForDate.length
               }
             </strong>
-
           </div>
 
           <div>
-
             <span>
               Train Movements
             </span>
@@ -2594,15 +2428,12 @@ function Timeline() {
                 trainsForDate.length
               }
             </strong>
-
           </div>
-
         </div>
 
         {/* LEGEND */}
 
         <div className="timeline-legend">
-
           <div>
             <span className="legend-dot maintenance" />
             Maintenance
@@ -2631,47 +2462,36 @@ function Timeline() {
             </span>
             AI Score
           </div>
-
         </div>
 
         {/* TIMELINE */}
 
         <div className="timeline-scroll">
-
           <div className="timeline-ruler">
-
             <div className="timeline-ruler-label">
               Operations
             </div>
 
             <div className="timeline-ruler-hours">
-
               {timelineHours.map(
                 (hour) => (
-
                   <span
                     key={hour}
                   >
-                    {
-                      String(
-                        hour
-                      ).padStart(
-                        2,
-                        "0"
-                      )
-                    }
+                    {String(
+                      hour
+                    ).padStart(
+                      2,
+                      "0"
+                    )}
                     :00
                   </span>
-
                 )
               )}
-
             </div>
-
           </div>
 
           <div className="timeline-track-area">
-
             {/* =================================================
                 MAINTENANCE BLOCKS
             ================================================= */}
@@ -2681,7 +2501,6 @@ function Timeline() {
                 block,
                 index
               ) => {
-
                 const startTime =
                   block.start_time ??
                   block.start ??
@@ -2709,8 +2528,9 @@ function Timeline() {
                   );
 
                 const cancelled =
-                  block.status ===
-                  "CANCELLED";
+                  isCancelledBlock(
+                    block
+                  );
 
                 const taskLabels =
                   getBlockTaskLabels(
@@ -2723,7 +2543,6 @@ function Timeline() {
                   );
 
                 return (
-
                   <div
                     className={`timeline-operation-row ${
                       cancelled
@@ -2735,9 +2554,7 @@ function Timeline() {
                       index
                     }
                   >
-
                     <div className="timeline-operation-label">
-
                       <strong>
                         Section{" "}
                         {
@@ -2750,11 +2567,9 @@ function Timeline() {
                           block.block_code
                         }
                       </span>
-
                     </div>
 
                     <div className="timeline-track">
-
                       <div
                         className={`timeline-block ${
                           cancelled
@@ -2766,9 +2581,7 @@ function Timeline() {
                           width: `${width}%`,
                         }}
                       >
-
                         <div className="timeline-block-top">
-
                           <strong>
                             {
                               block.block_code
@@ -2777,10 +2590,11 @@ function Timeline() {
 
                           <span className="timeline-status-pill">
                             {
-                              block.status
+                              normalizeStatus(
+                                block.status
+                              )
                             }
                           </span>
-
                         </div>
 
                         <div className="timeline-block-time">
@@ -2798,7 +2612,6 @@ function Timeline() {
                         </div>
 
                         <div className="timeline-block-tasks">
-
                           {taskLabels
                             .slice(
                               0,
@@ -2808,7 +2621,6 @@ function Timeline() {
                               (
                                 taskCode
                               ) => (
-
                                 <span
                                   key={
                                     taskCode
@@ -2818,13 +2630,11 @@ function Timeline() {
                                     taskCode
                                   }
                                 </span>
-
                               )
                             )}
 
                           {taskLabels.length >
                             3 && (
-
                             <span>
                               +
                               {
@@ -2832,76 +2642,55 @@ function Timeline() {
                                 3
                               }
                             </span>
-
                           )}
-
                         </div>
-
-                        {/* =====================================
-                            ML + AI DATA
-                        ===================================== */}
 
                         {!cancelled &&
                           aiData && (
+                            <div className="timeline-block-ai">
+                              <div className="timeline-ai-chip">
+                                <span>
+                                  ML
+                                </span>
 
-                          <div className="timeline-block-ai">
-
-                            <div className="timeline-ai-chip">
-
-                              <span>
-                                ML
-                              </span>
-
-                              <strong>
-                                {
-                                  aiData.ml_risk_percentage ??
-                                  "—"
-                                }
-                                %
-                              </strong>
-
-                            </div>
-
-                            <div className="timeline-ai-chip">
-
-                              <span>
-                                AI
-                              </span>
-
-                              <strong>
-                                {
-                                  aiData.ai_decision_score ??
-                                  "—"
-                                }
-                              </strong>
-
-                            </div>
-
-                            {aiData
-                              .ml_risk_level && (
-
-                              <div
-                                className={`timeline-risk-chip ${String(
-                                  aiData.ml_risk_level
-                                ).toLowerCase()}`}
-                              >
-                                {
-                                  aiData.ml_risk_level
-                                }
+                                <strong>
+                                  {
+                                    aiData.ml_risk_percentage ??
+                                    "—"
+                                  }%
+                                </strong>
                               </div>
 
-                            )}
+                              <div className="timeline-ai-chip">
+                                <span>
+                                  AI
+                                </span>
 
-                          </div>
+                                <strong>
+                                  {
+                                    aiData.ai_decision_score ??
+                                    "—"
+                                  }
+                                </strong>
+                              </div>
 
-                        )}
-
+                              {aiData
+                                .ml_risk_level && (
+                                <div
+                                  className={`timeline-risk-chip ${String(
+                                    aiData.ml_risk_level
+                                  ).toLowerCase()}`}
+                                >
+                                  {
+                                    aiData.ml_risk_level
+                                  }
+                                </div>
+                              )}
+                            </div>
+                          )}
                       </div>
-
                     </div>
-
                   </div>
-
                 );
               }
             )}
@@ -2915,16 +2704,15 @@ function Timeline() {
                 train,
                 index
               ) => {
-
                 const start =
-                  train.departure_time ??
-                  train.departure ??
+                  train.arrival_time ??
+                  train.arrival ??
                   train.start_time ??
                   train.time;
 
                 const end =
-                  train.arrival_time ??
-                  train.arrival ??
+                  train.departure_time ??
+                  train.departure ??
                   train.end_time ??
                   start;
 
@@ -2948,7 +2736,6 @@ function Timeline() {
                   );
 
                 return (
-
                   <div
                     className="timeline-operation-row timeline-train-operation"
                     key={
@@ -2957,9 +2744,7 @@ function Timeline() {
                       `train-${index}`
                     }
                   >
-
                     <div className="timeline-operation-label">
-
                       <strong>
                         Train{" "}
                         {
@@ -2974,11 +2759,9 @@ function Timeline() {
                           train.section_id
                         }
                       </span>
-
                     </div>
 
                     <div className="timeline-track">
-
                       <div
                         className="timeline-train"
                         style={{
@@ -2986,10 +2769,10 @@ function Timeline() {
                           width: `${width}%`,
                         }}
                       >
-
                         <strong>
                           🚆{" "}
                           {
+                            train.train_no ??
                             train.train_number ??
                             train.train_name ??
                             `Train ${
@@ -3012,36 +2795,28 @@ function Timeline() {
                             )
                           }
                         </span>
-
                       </div>
-
                     </div>
-
                   </div>
-
                 );
               }
             )}
 
-            {timelineBlocksForDate.length ===
+            {timelineBlocksForDate
+              .length ===
               0 &&
-              trainsForDate.length ===
+              trainsForDate
+                .length ===
                 0 && (
-
-              <div className="timeline-empty">
-
-                No blocks or train
-                movements available
-                for this date.
-
-              </div>
-
-            )}
-
+                <div className="timeline-empty">
+                  No blocks or train
+                  movements
+                  available for
+                  this date.
+                </div>
+              )}
           </div>
-
         </div>
-
       </section>
 
       {/* =================================================
@@ -3049,34 +2824,29 @@ function Timeline() {
       ================================================= */}
 
       {selectedRecommendation && (
-
         <div
           className="timeline-modal-overlay"
           onClick={
             closeReview
           }
         >
-
           <div
             className="timeline-review-modal"
             onClick={(event) =>
               event.stopPropagation()
             }
           >
-
             <div className="timeline-modal-header">
-
               <div>
-
                 <span className="timeline-modal-eyebrow">
                   BLOCK REVIEW
                 </span>
 
                 <h2>
-                  🛠️ Maintenance Block
+                  🛠️ Maintenance
+                  Block
                   Recommendation
                 </h2>
-
               </div>
 
               <button
@@ -3091,13 +2861,10 @@ function Timeline() {
               >
                 ×
               </button>
-
             </div>
 
             <div className="timeline-modal-body">
-
               <div className="timeline-review-grid">
-
                 <div className="timeline-review-item">
                   <span>
                     Date
@@ -3106,7 +2873,8 @@ function Timeline() {
                   <strong>
                     {
                       formatDate(
-                        selectedRecommendation.schedule_date
+                        selectedRecommendation.schedule_date ??
+                          selectedRecommendation.date
                       )
                     }
                   </strong>
@@ -3127,7 +2895,8 @@ function Timeline() {
 
                 <div className="timeline-review-item">
                   <span>
-                    Recommended Window
+                    Recommended
+                    Window
                   </span>
 
                   <strong className="timeline-review-time">
@@ -3165,7 +2934,6 @@ function Timeline() {
                 {selectedRecommendation
                   .ml_risk_percentage !==
                   undefined && (
-
                   <div className="timeline-review-item">
                     <span>
                       ML Risk
@@ -3178,13 +2946,11 @@ function Timeline() {
                       }%
                     </strong>
                   </div>
-
                 )}
 
                 {selectedRecommendation
                   .planning_score !==
                   undefined && (
-
                   <div className="timeline-review-item">
                     <span>
                       Planning Score
@@ -3197,24 +2963,20 @@ function Timeline() {
                       }
                     </strong>
                   </div>
-
                 )}
-
               </div>
 
               <div className="timeline-review-section">
-
                 <h3>
-                  Maintenance Tasks
+                  Maintenance
+                  Tasks
                 </h3>
 
                 <div className="timeline-review-task-list">
-
                   {getRecommendationTaskIds(
                     selectedRecommendation
                   ).map(
                     (taskId) => (
-
                       <span
                         className="planned-task-tag"
                         key={
@@ -3228,18 +2990,15 @@ function Timeline() {
                             )
                           ]
                             ?.task_code ??
-                          `Task ${taskId}`}
+                          `Task ${taskId}`
+                        }
                       </span>
-
                     )
                   )}
-
                 </div>
-
               </div>
 
               <div className="timeline-review-reason">
-
                 <strong>
                   Planning Reason
                 </strong>
@@ -3252,17 +3011,15 @@ function Timeline() {
                     "AI-generated maintenance recommendation based on current operational constraints."
                   }
                 </p>
-
               </div>
 
               {selectedRecommendation
                 .goods_forecast_considered ===
                 true && (
-
                 <div className="timeline-review-forecast">
-
                   🚆 Goods forecast was
-                  considered during this
+                  considered during
+                  this
                   recommendation.
 
                   <strong>
@@ -3277,57 +3034,44 @@ function Timeline() {
                       Number(
                         selectedRecommendation
                           .expected_goods_trains ??
-                        0
+                          0
                       ) === 1
                         ? ""
                         : "s"
                     }
                   </strong>
-
                 </div>
-
               )}
 
               <div className="timeline-review-warning">
-
                 ⚠ Approving this
-                recommendation will
-                create an actual planned
-                maintenance block in
-                the database.
-
+                recommendation
+                will create an
+                actual planned
+                maintenance block
+                in the database.
               </div>
 
               {approvalError && (
-
                 <div className="timeline-review-error">
-
                   ⚠{" "}
                   {
                     approvalError
                   }
-
                 </div>
-
               )}
 
               {approvalSuccess && (
-
                 <div className="timeline-review-success">
-
                   ✓{" "}
                   {
                     approvalSuccess
                   }
-
                 </div>
-
               )}
-
             </div>
 
             <div className="timeline-modal-footer">
-
               <button
                 type="button"
                 className="timeline-modal-cancel"
@@ -3342,17 +3086,15 @@ function Timeline() {
               </button>
 
               {approvalSuccess ? (
-
                 <button
                   type="button"
                   className="timeline-modal-approve"
                   disabled
                 >
-                  ✓ Block Created
+                  ✓ Block
+                  Created
                 </button>
-
               ) : (
-
                 <button
                   type="button"
                   className="timeline-modal-approve"
@@ -3367,19 +3109,14 @@ function Timeline() {
                     ? "⏳ Creating..."
                     : "✓ Approve & Create Block"}
                 </button>
-
               )}
-
             </div>
-
           </div>
-
         </div>
-
       )}
-
     </div>
   );
 }
 
 export default Timeline;
+

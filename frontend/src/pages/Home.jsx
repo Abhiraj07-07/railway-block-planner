@@ -1,3 +1,4 @@
+
 import {
   useEffect,
   useMemo,
@@ -7,7 +8,10 @@ import {
 import { authFetch } from "../App";
 import "./Home.css";
 
-const API_BASE = "http://127.0.0.1:8000";
+const API_BASE =
+  import.meta.env.VITE_API_BASE ||
+  "http://127.0.0.1:8000";
+
 const MIN_LOADING_TIME = 1000;
 
 /* =========================================================
@@ -86,6 +90,21 @@ const wait = (ms) =>
   new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+
+/* =========================================================
+   TASK STATUS
+========================================================= */
+
+const isTaskOverdue = (task) => {
+  const status = String(
+    task?.status ??
+      task?.task_status ??
+      task?.state ??
+      ""
+  ).toUpperCase();
+
+  return status === "OVERDUE";
+};
 
 /* =========================================================
    COMPONENT
@@ -239,9 +258,13 @@ function Home() {
 
       requests.forEach(
         (item, index) => {
-          const result = results[index];
+          const result =
+            results[index];
 
-          if (result.status === "fulfilled") {
+          if (
+            result.status ===
+            "fulfilled"
+          ) {
             data[item.key] =
               result.value;
           } else {
@@ -256,11 +279,13 @@ function Home() {
       );
 
       /* =====================================================
-         SET CORE DATA
+         CORE
       ===================================================== */
 
       setBlocks(
-        normalizeArray(data.blocks)
+        normalizeArray(
+          data.blocks
+        )
       );
 
       setMaintenanceTasks(
@@ -270,53 +295,72 @@ function Home() {
       );
 
       setEvents(
-        normalizeArray(data.events)
+        normalizeArray(
+          data.events
+        )
       );
 
       setTrains(
-        normalizeArray(data.trains)
+        normalizeArray(
+          data.trains
+        )
       );
 
       /* =====================================================
-         SET NETWORK DATA
+         NETWORK
       ===================================================== */
 
       setStations(
-        normalizeArray(data.stations)
+        normalizeArray(
+          data.stations
+        )
       );
 
       setSections(
-        normalizeArray(data.sections)
+        normalizeArray(
+          data.sections
+        )
       );
 
       setAssets(
-        normalizeArray(data.assets)
+        normalizeArray(
+          data.assets
+        )
       );
 
       setDefects(
-        normalizeArray(data.defects)
+        normalizeArray(
+          data.defects
+        )
       );
 
       /* =====================================================
-         SET AI DATA
+         AI
       ===================================================== */
 
       setMlAssets(
-        normalizeArray(data.ml)
+        normalizeArray(
+          data.ml
+        )
       );
 
       setAiDecisions(
-        normalizeArray(data.decisions)
+        normalizeArray(
+          data.decisions
+        )
       );
 
       setAiBestPlan(
-        data.bestPlan?.best_plan ??
-        data.bestPlan?.data?.best_plan ??
-        null
+        data.bestPlan
+          ?.best_plan ??
+          data.bestPlan
+            ?.data
+            ?.best_plan ??
+          null
       );
 
       /* =====================================================
-         SET INTEGRATION
+         INTEGRATION
       ===================================================== */
 
       setIntegrationStatus(
@@ -324,28 +368,30 @@ function Home() {
       );
 
       /* =====================================================
-         MINIMUM 2.5 SECOND LOAD
+         MIN LOADING TIME
       ===================================================== */
 
       const elapsed =
-        Date.now() - startedAt;
+        Date.now() -
+        startedAt;
 
       const remaining =
         Math.max(
           0,
-          MIN_LOADING_TIME - elapsed
+          MIN_LOADING_TIME -
+            elapsed
         );
 
-      await wait(remaining);
+      await wait(
+        remaining
+      );
 
       if (!mounted) return;
 
       setLoadProgress(100);
-
       setLastUpdated(
         new Date()
       );
-
       setPageLoading(false);
     };
 
@@ -357,21 +403,26 @@ function Home() {
   }, []);
 
   /* =======================================================
-     FAKE SMOOTH LOADING PROGRESS
+     SMOOTH LOADING
   ======================================================= */
 
   useEffect(() => {
     if (!pageLoading) return;
 
-    const timer = setInterval(() => {
-      setLoadProgress((current) => {
-        if (current >= 92) {
-          return current;
-        }
+    const timer =
+      setInterval(() => {
+        setLoadProgress(
+          (current) => {
+            if (
+              current >= 92
+            ) {
+              return current;
+            }
 
-        return current + 3;
-      });
-    }, 180);
+            return current + 3;
+          }
+        );
+      }, 180);
 
     return () => {
       clearInterval(timer);
@@ -382,90 +433,152 @@ function Home() {
      DERIVED DATA
   ======================================================= */
 
-  const activeBlocks = useMemo(() => {
-    return blocks.filter(
-      (block) =>
-        block.status !== "CANCELLED"
-    );
-  }, [blocks]);
+  /*
+    IMPORTANT:
+    Active Blocks means operationally active/scheduled
+    blocks only.
 
-  const openEvents = useMemo(() => {
-    return events.filter(
-      (event) =>
-        event.status === "OPEN"
-    );
-  }, [events]);
-
-  const criticalEvents = useMemo(() => {
-    return openEvents.filter(
-      (event) =>
-        event.severity === "CRITICAL"
-    );
-  }, [openEvents]);
-
-  const overdueTasks = useMemo(() => {
-    return maintenanceTasks.filter(
-      (task) =>
-        task.status === "OVERDUE"
-    );
-  }, [maintenanceTasks]);
-
-  const openDefects = useMemo(() => {
-    return defects.filter(
-      (defect) =>
-        defect.status === "OPEN"
-    );
-  }, [defects]);
-
-  const criticalMlAssets = useMemo(() => {
-    return [...mlAssets]
-      .filter(
-        (asset) =>
-          Number(
-            asset.ml_risk_percentage
-          ) >= 80
-      )
-      .sort(
-        (a, b) =>
-          (Number(
-            b.ml_risk_percentage
-          ) || 0) -
-          (Number(
-            a.ml_risk_percentage
-          ) || 0)
-      );
-  }, [mlAssets]);
-
-  const urgentAiDecisions =
+    COMPLETED and CANCELLED are NOT active.
+  */
+  const activeBlocks =
     useMemo(() => {
-      return [...aiDecisions]
-        .filter(
-          (decision) =>
-            decision.decision_level ===
-              "URGENT" ||
-            decision.decision_level ===
-              "HIGH"
-        )
+      const activeStatuses = new Set([
+        "PLANNED",
+        "APPROVED",
+        "IN_PROGRESS",
+      ]);
+
+      return blocks.filter(
+        (block) =>
+          activeStatuses.has(
+            String(
+              block?.status ??
+                ""
+            ).toUpperCase()
+          )
+      );
+    }, [blocks]);
+
+  const openEvents =
+    useMemo(() => {
+      return events.filter(
+        (event) =>
+          String(
+            event?.status ??
+              ""
+          ).toUpperCase() ===
+          "OPEN"
+      );
+    }, [events]);
+
+  const criticalEvents =
+    useMemo(() => {
+      return openEvents.filter(
+        (event) =>
+          String(
+            event?.severity ??
+              ""
+          ).toUpperCase() ===
+          "CRITICAL"
+      );
+    }, [openEvents]);
+
+  /*
+    Overdue task detection supports different API field names.
+  */
+  const overdueTasks =
+    useMemo(() => {
+      return maintenanceTasks.filter(
+        isTaskOverdue
+      );
+    }, [maintenanceTasks]);
+
+  const openDefects =
+    useMemo(() => {
+      return defects.filter(
+        (defect) =>
+          String(
+            defect?.status ??
+              ""
+          ).toUpperCase() ===
+          "OPEN"
+      );
+    }, [defects]);
+
+  /* =======================================================
+     ML RISK
+  ======================================================= */
+
+  const criticalMlAssets =
+    useMemo(() => {
+      return [...mlAssets]
+        .filter((asset) => {
+          const level =
+            String(
+              asset?.ml_risk_level ??
+                ""
+            ).toUpperCase();
+
+          const percentage =
+            Number(
+              asset?.ml_risk_percentage ??
+                0
+            );
+
+          return (
+            level ===
+              "CRITICAL" ||
+            level === "HIGH" ||
+            percentage >= 60
+          );
+        })
         .sort(
           (a, b) =>
-            (Number(
-              b.ai_decision_score
-            ) || 0) -
-            (Number(
-              a.ai_decision_score
-            ) || 0)
+            (
+              Number(
+                b?.ml_risk_percentage
+              ) || 0
+            ) -
+            (
+              Number(
+                a?.ml_risk_percentage
+              ) || 0
+            )
         );
+    }, [mlAssets]);
+
+  /* =======================================================
+     AI TASK PRIORITIES
+  ======================================================= */
+
+  const aiPriorityDecisions =
+    useMemo(() => {
+      return [...aiDecisions].sort(
+        (a, b) =>
+          (
+            Number(
+              b?.ai_decision_score
+            ) || 0
+          ) -
+          (
+            Number(
+              a?.ai_decision_score
+            ) || 0
+          )
+      );
     }, [aiDecisions]);
 
   const connectedSystems =
-    integrationStatus?.systems?.filter(
-      (system) =>
-        system.connected === true
-    ).length ?? 0;
+    integrationStatus
+      ?.systems?.filter(
+        (system) =>
+          system.connected ===
+          true
+      ).length ?? 0;
 
   const totalSystems =
-    integrationStatus?.systems
-      ?.length ?? 0;
+    integrationStatus
+      ?.systems?.length ?? 0;
 
   /* =======================================================
      SYSTEM STATUS
@@ -475,16 +588,18 @@ function Home() {
     criticalEvents.length > 0
       ? "CRITICAL"
       : openEvents.length > 0 ||
-        overdueTasks.length > 0
-      ? "ATTENTION"
-      : "HEALTHY";
+          overdueTasks.length > 0
+        ? "ATTENTION"
+        : "HEALTHY";
 
   const systemStateText =
-    systemState === "CRITICAL"
+    systemState ===
+    "CRITICAL"
       ? "Critical operational attention required"
-      : systemState === "ATTENTION"
-      ? "Operational attention required"
-      : "All monitored systems healthy";
+      : systemState ===
+          "ATTENTION"
+        ? "Operational attention required"
+        : "All monitored systems healthy";
 
   /* =======================================================
      LOADING SCREEN
@@ -494,10 +609,14 @@ function Home() {
     return (
       <div
         style={{
-          minHeight: "calc(100vh - 76px)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
+          minHeight:
+            "calc(100vh - 76px)",
+          display:
+            "flex",
+          alignItems:
+            "center",
+          justifyContent:
+            "center",
           background:
             "linear-gradient(135deg, #eef6ff 0%, #f8fbff 50%, #edf5ff 100%)",
           padding: "30px",
@@ -506,14 +625,20 @@ function Home() {
 
         <div
           style={{
-            width: "min(560px, 92vw)",
-            background: "rgba(255,255,255,0.96)",
-            border: "1px solid #d8e7fa",
-            borderRadius: "24px",
-            padding: "42px 38px",
+            width:
+              "min(560px, 92vw)",
+            background:
+              "rgba(255,255,255,0.96)",
+            border:
+              "1px solid #d8e7fa",
+            borderRadius:
+              "24px",
+            padding:
+              "42px 38px",
             boxShadow:
               "0 20px 60px rgba(29,78,137,0.12)",
-            textAlign: "center",
+            textAlign:
+              "center",
           }}
         >
 
@@ -521,15 +646,21 @@ function Home() {
             style={{
               width: "76px",
               height: "76px",
-              margin: "0 auto 20px",
-              borderRadius: "20px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
+              margin:
+                "0 auto 20px",
+              borderRadius:
+                "20px",
+              display:
+                "flex",
+              alignItems:
+                "center",
+              justifyContent:
+                "center",
               background:
                 "linear-gradient(135deg, #0d6efd, #1d4ed8)",
               color: "#fff",
-              fontSize: "34px",
+              fontSize:
+                "34px",
               boxShadow:
                 "0 12px 30px rgba(13,110,253,0.25)",
             }}
@@ -539,11 +670,16 @@ function Home() {
 
           <div
             style={{
-              fontSize: "12px",
-              fontWeight: "800",
-              letterSpacing: "2px",
-              color: "#2563eb",
-              marginBottom: "10px",
+              fontSize:
+                "12px",
+              fontWeight:
+                "800",
+              letterSpacing:
+                "2px",
+              color:
+                "#2563eb",
+              marginBottom:
+                "10px",
             }}
           >
             RAILWAY OPERATIONS CONTROL
@@ -551,9 +687,12 @@ function Home() {
 
           <h1
             style={{
-              margin: "0 0 10px",
-              fontSize: "30px",
-              color: "#10213f",
+              margin:
+                "0 0 10px",
+              fontSize:
+                "30px",
+              color:
+                "#10213f",
             }}
           >
             Initializing Dashboard
@@ -561,30 +700,43 @@ function Home() {
 
           <p
             style={{
-              margin: "0 0 28px",
-              color: "#64748b",
-              fontSize: "14px",
+              margin:
+                "0 0 28px",
+              color:
+                "#64748b",
+              fontSize:
+                "14px",
             }}
           >
-            Loading railway operations,
-            maintenance and AI intelligence...
+            Loading railway
+            operations,
+            maintenance and
+            AI intelligence...
           </p>
 
           <div
             style={{
-              height: "8px",
-              borderRadius: "999px",
-              background: "#e8f0fa",
-              overflow: "hidden",
-              marginBottom: "12px",
+              height:
+                "8px",
+              borderRadius:
+                "999px",
+              background:
+                "#e8f0fa",
+              overflow:
+                "hidden",
+              marginBottom:
+                "12px",
             }}
           >
 
             <div
               style={{
-                width: `${loadProgress}%`,
-                height: "100%",
-                borderRadius: "999px",
+                width:
+                  `${loadProgress}%`,
+                height:
+                  "100%",
+                borderRadius:
+                  "999px",
                 background:
                   "linear-gradient(90deg, #2563eb, #60a5fa)",
                 transition:
@@ -596,20 +748,26 @@ function Home() {
 
           <div
             style={{
-              display: "flex",
-              justifyContent: "space-between",
-              fontSize: "12px",
-              color: "#64748b",
+              display:
+                "flex",
+              justifyContent:
+                "space-between",
+              fontSize:
+                "12px",
+              color:
+                "#64748b",
             }}
           >
 
             <span>
-              Securing data connections
+              Securing data
+              connections
             </span>
 
             <strong
               style={{
-                color: "#2563eb",
+                color:
+                  "#2563eb",
               }}
             >
               {loadProgress}%
@@ -619,21 +777,28 @@ function Home() {
 
           <div
             style={{
-              display: "grid",
+              display:
+                "grid",
               gridTemplateColumns:
                 "repeat(3, 1fr)",
               gap: "10px",
-              marginTop: "28px",
+              marginTop:
+                "28px",
             }}
           >
 
             <div
               style={{
-                padding: "12px 8px",
-                borderRadius: "12px",
-                background: "#f4f8ff",
-                fontSize: "11px",
-                color: "#475569",
+                padding:
+                  "12px 8px",
+                borderRadius:
+                  "12px",
+                background:
+                  "#f4f8ff",
+                fontSize:
+                  "11px",
+                color:
+                  "#475569",
               }}
             >
               🚧
@@ -643,11 +808,16 @@ function Home() {
 
             <div
               style={{
-                padding: "12px 8px",
-                borderRadius: "12px",
-                background: "#f4f8ff",
-                fontSize: "11px",
-                color: "#475569",
+                padding:
+                  "12px 8px",
+                borderRadius:
+                  "12px",
+                background:
+                  "#f4f8ff",
+                fontSize:
+                  "11px",
+                color:
+                  "#475569",
               }}
             >
               🧠
@@ -657,11 +827,16 @@ function Home() {
 
             <div
               style={{
-                padding: "12px 8px",
-                borderRadius: "12px",
-                background: "#f4f8ff",
-                fontSize: "11px",
-                color: "#475569",
+                padding:
+                  "12px 8px",
+                borderRadius:
+                  "12px",
+                background:
+                  "#f4f8ff",
+                fontSize:
+                  "11px",
+                color:
+                  "#475569",
               }}
             >
               🚆
@@ -702,10 +877,13 @@ function Home() {
           </h1>
 
           <p>
-            Unified maintenance planning,
-            machine-learning risk analysis,
-            dynamic re-planning and
-            railway operations monitoring.
+            Unified maintenance
+            planning,
+            machine-learning
+            risk analysis,
+            dynamic re-planning
+            and railway operations
+            monitoring.
           </p>
 
           {lastUpdated && (
@@ -714,9 +892,12 @@ function Home() {
               {lastUpdated.toLocaleTimeString(
                 "en-IN",
                 {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                  second: "2-digit",
+                  hour:
+                    "2-digit",
+                  minute:
+                    "2-digit",
+                  second:
+                    "2-digit",
                 }
               )}
             </span>
@@ -754,14 +935,10 @@ function Home() {
 
       {error && (
         <div className="home-error">
-
           <strong>
             Dashboard Notice:
-          </strong>
-
-          {" "}
+          </strong>{" "}
           {error}
-
         </div>
       )}
 
@@ -782,7 +959,8 @@ function Home() {
           </strong>
 
           <small>
-            {blocks.length} total blocks
+            {blocks.length} total
+            blocks
           </small>
 
         </div>
@@ -790,15 +968,18 @@ function Home() {
         <div className="home-kpi-card">
 
           <span>
-            🚨 Urgent Tasks
+            🎯 AI Task Priorities
           </span>
 
           <strong>
-            {urgentAiDecisions.length}
+            {
+              aiPriorityDecisions.length
+            }
           </strong>
 
           <small>
-            AI-prioritized maintenance
+            AI-ranked maintenance
+            decisions
           </small>
 
         </div>
@@ -806,15 +987,17 @@ function Home() {
         <div className="home-kpi-card danger">
 
           <span>
-            🧠 Critical ML Assets
+            🧠 High/Critical ML Assets
           </span>
 
           <strong>
-            {criticalMlAssets.length}
+            {
+              criticalMlAssets.length
+            }
           </strong>
 
           <small>
-            Risk ≥ 80%
+            High or critical ML risk
           </small>
 
         </div>
@@ -830,7 +1013,10 @@ function Home() {
           </strong>
 
           <small>
-            {criticalEvents.length} critical
+            {
+              criticalEvents.length
+            }{" "}
+            critical
           </small>
 
         </div>
@@ -888,11 +1074,13 @@ function Home() {
               </span>
 
               <h2>
-                🏆 Best Maintenance Plan
+                🏆 Best Maintenance
+                Plan
               </h2>
 
               <p>
-                Highest-scoring maintenance
+                Highest-scoring
+                maintenance
                 recommendation.
               </p>
 
@@ -917,16 +1105,24 @@ function Home() {
                   </span>
 
                   <h3>
-                    {aiBestPlan.task_code ??
-                      "Maintenance Task"}
+                    {
+                      aiBestPlan.task_code ??
+                      "Maintenance Task"
+                    }
                   </h3>
 
                   <p>
                     Asset{" "}
-                    {aiBestPlan.asset_id ?? "—"}
+                    {
+                      aiBestPlan.asset_id ??
+                      "—"
+                    }
                     {" • "}
                     Section{" "}
-                    {aiBestPlan.section_id ?? "—"}
+                    {
+                      aiBestPlan.section_id ??
+                      "—"
+                    }
                   </p>
 
                 </div>
@@ -934,8 +1130,10 @@ function Home() {
                 <div className="home-plan-score-circle">
 
                   <strong>
-                    {aiBestPlan.ai_plan_score ??
-                      "—"}
+                    {
+                      aiBestPlan.ai_plan_score ??
+                      "—"
+                    }
                   </strong>
 
                   <span>
@@ -955,8 +1153,10 @@ function Home() {
                   </span>
 
                   <strong>
-                    {aiBestPlan.ai_decision_score ??
-                      "—"}
+                    {
+                      aiBestPlan.ai_decision_score ??
+                      "—"
+                    }
                   </strong>
 
                 </div>
@@ -968,9 +1168,11 @@ function Home() {
                   </span>
 
                   <strong>
-                    {aiBestPlan.ml_risk_percentage ??
+                    {
+                      aiBestPlan.ml_risk_percentage ??
                       aiBestPlan.asset_risk_score ??
-                      "—"}
+                      "—"
+                    }
                     %
                   </strong>
 
@@ -983,9 +1185,11 @@ function Home() {
                   </span>
 
                   <strong>
-                    {aiBestPlan.ml_risk_level ??
+                    {
+                      aiBestPlan.ml_risk_level ??
                       aiBestPlan.combined_risk_level ??
-                      "—"}
+                      "—"
+                    }
                   </strong>
 
                 </div>
@@ -999,8 +1203,10 @@ function Home() {
                 </span>
 
                 <strong>
-                  {aiBestPlan.final_action ??
-                    "PLAN"}
+                  {
+                    aiBestPlan.final_action ??
+                    "PLAN"
+                  }
                 </strong>
 
               </div>
@@ -1012,8 +1218,10 @@ function Home() {
                 </strong>
 
                 <p>
-                  {aiBestPlan.recommendation ??
-                    "AI-generated recommendation based on operational constraints."}
+                  {
+                    aiBestPlan.recommendation ??
+                    "AI-generated recommendation based on operational constraints."
+                  }
                 </p>
 
               </div>
@@ -1023,7 +1231,8 @@ function Home() {
           ) : (
 
             <div className="home-empty-panel">
-              No AI best plan available.
+              No AI best plan
+              available.
             </div>
 
           )}
@@ -1065,52 +1274,67 @@ function Home() {
 
               criticalMlAssets
                 .slice(0, 5)
-                .map((asset) => (
+                .map(
+                  (asset) => (
 
-                  <div
-                    className="home-risk-item"
-                    key={asset.asset_id}
-                  >
+                    <div
+                      className="home-risk-item"
+                      key={
+                        asset.asset_id
+                      }
+                    >
 
-                    <div>
+                      <div>
 
-                      <strong>
-                        {asset.asset_code}
-                      </strong>
+                        <strong>
+                          {
+                            asset.asset_code
+                          }
+                        </strong>
 
-                      <span>
-                        {asset.asset_type}
-                        {" • "}
-                        Section{" "}
-                        {asset.section_id}
-                      </span>
+                        <span>
+                          {
+                            asset.asset_type
+                          }
+                          {" • "}
+                          Section{" "}
+                          {
+                            asset.section_id
+                          }
+                        </span>
+
+                      </div>
+
+                      <div className="home-risk-right">
+
+                        <strong>
+                          {
+                            asset.ml_risk_percentage
+                          }%
+                        </strong>
+
+                        <span
+                          className={`home-risk-badge ${statusClass(
+                            asset.ml_risk_level
+                          )}`}
+                        >
+                          {
+                            asset.ml_risk_level
+                          }
+                        </span>
+
+                      </div>
 
                     </div>
 
-                    <div className="home-risk-right">
-
-                      <strong>
-                        {asset.ml_risk_percentage}%
-                      </strong>
-
-                      <span
-                        className={`home-risk-badge ${statusClass(
-                          asset.ml_risk_level
-                        )}`}
-                      >
-                        {asset.ml_risk_level}
-                      </span>
-
-                    </div>
-
-                  </div>
-
-                ))
+                  )
+                )
 
             ) : (
 
               <div className="home-empty-panel">
-                No critical ML risks detected.
+                No high or critical
+                ML risks detected.
               </div>
 
             )}
@@ -1139,6 +1363,8 @@ function Home() {
 
       <section className="home-three-grid">
 
+        {/* BLOCKS */}
+
         <div className="home-panel">
 
           <div className="home-panel-header compact">
@@ -1146,79 +1372,106 @@ function Home() {
             <div>
 
               <h2>
-                🚧 Active Maintenance Blocks
+                🚧 Active Maintenance
+                Blocks
               </h2>
 
               <p>
-                Current operational blocks.
+                Current operational
+                blocks.
               </p>
 
             </div>
 
             <span className="home-count-badge">
-              {activeBlocks.length}
+              {
+                activeBlocks.length
+              }
             </span>
 
           </div>
 
           <div className="home-list">
 
-            {activeBlocks.length > 0 ? (
+            {activeBlocks.length >
+            0 ? (
 
               activeBlocks
                 .slice(0, 5)
-                .map((block) => (
+                .map(
+                  (block) => (
 
-                  <div
-                    className="home-list-item"
-                    key={block.block_id}
-                  >
+                    <div
+                      className="home-list-item"
+                      key={
+                        block.block_id
+                      }
+                    >
 
-                    <div>
+                      <div>
 
-                      <strong>
-                        {block.block_code}
-                      </strong>
+                        <strong>
+                          {
+                            block.block_code
+                          }
+                        </strong>
 
-                      <span>
-                        SEC
-                        {String(
-                          block.section_id
-                        ).padStart(2, "0")}
-                        {" • "}
-                        {formatDate(
-                          block.block_date
-                        )}
-                      </span>
+                        <span>
+                          SEC
+                          {String(
+                            block.section_id
+                          ).padStart(
+                            2,
+                            "0"
+                          )}
+                          {" • "}
+                          {
+                            formatDate(
+                              block.block_date
+                            )
+                          }
+                        </span>
+
+                      </div>
+
+                      <div>
+
+                        <strong>
+                          {String(
+                            block.start_time ??
+                              ""
+                          ).slice(
+                            0,
+                            5
+                          )}
+                          {" – "}
+                          {String(
+                            block.end_time ??
+                              ""
+                          ).slice(
+                            0,
+                            5
+                          )}
+                        </strong>
+
+                        <span>
+                          {
+                            block.status
+                          }
+                        </span>
+
+                      </div>
 
                     </div>
 
-                    <div>
-
-                      <strong>
-                        {String(
-                          block.start_time ?? ""
-                        ).slice(0, 5)}
-                        {" – "}
-                        {String(
-                          block.end_time ?? ""
-                        ).slice(0, 5)}
-                      </strong>
-
-                      <span>
-                        {block.status}
-                      </span>
-
-                    </div>
-
-                  </div>
-
-                ))
+                  )
+                )
 
             ) : (
 
               <div className="home-empty-panel">
-                No active maintenance blocks.
+                No active maintenance
+                blocks.
               </div>
 
             )}
@@ -1226,6 +1479,8 @@ function Home() {
           </div>
 
         </div>
+
+        {/* EVENTS */}
 
         <div className="home-panel">
 
@@ -1244,53 +1499,67 @@ function Home() {
             </div>
 
             <span className="home-count-badge warning">
-              {openEvents.length}
+              {
+                openEvents.length
+              }
             </span>
 
           </div>
 
           <div className="home-list">
 
-            {openEvents.length > 0 ? (
+            {openEvents.length >
+            0 ? (
 
               openEvents
                 .slice(0, 5)
-                .map((event) => (
+                .map(
+                  (event) => (
 
-                  <div
-                    className="home-list-item"
-                    key={event.event_id}
-                  >
+                    <div
+                      className="home-list-item"
+                      key={
+                        event.event_id
+                      }
+                    >
 
-                    <div>
+                      <div>
 
-                      <strong>
-                        {event.event_type}
-                      </strong>
+                        <strong>
+                          {
+                            event.event_type
+                          }
+                        </strong>
 
-                      <span>
-                        Section{" "}
-                        {event.section_id}
+                        <span>
+                          Section{" "}
+                          {
+                            event.section_id
+                          }
+                        </span>
+
+                      </div>
+
+                      <span
+                        className={`home-event-badge ${statusClass(
+                          event.severity
+                        )}`}
+                      >
+                        {
+                          event.severity
+                        }
                       </span>
 
                     </div>
 
-                    <span
-                      className={`home-event-badge ${statusClass(
-                        event.severity
-                      )}`}
-                    >
-                      {event.severity}
-                    </span>
-
-                  </div>
-
-                ))
+                  )
+                )
 
             ) : (
 
               <div className="home-empty-panel">
-                ✅ No open operational events.
+                ✅ No open operational
+                events.
               </div>
 
             )}
@@ -1298,6 +1567,8 @@ function Home() {
           </div>
 
         </div>
+
+        {/* AI TASKS */}
 
         <div className="home-panel">
 
@@ -1310,64 +1581,80 @@ function Home() {
               </h2>
 
               <p>
-                Highest-priority maintenance
-                decisions.
+                Highest-scoring
+                maintenance decisions.
               </p>
 
             </div>
 
             <span className="home-count-badge">
-              {urgentAiDecisions.length}
+              {
+                aiPriorityDecisions.length
+              }
             </span>
 
           </div>
 
           <div className="home-list">
 
-            {urgentAiDecisions.length > 0 ? (
+            {aiPriorityDecisions.length >
+            0 ? (
 
-              urgentAiDecisions
+              aiPriorityDecisions
                 .slice(0, 5)
-                .map((decision) => (
+                .map(
+                  (decision) => (
 
-                  <div
-                    className="home-list-item"
-                    key={decision.task_id}
-                  >
+                    <div
+                      className="home-list-item"
+                      key={
+                        decision.task_id
+                      }
+                    >
 
-                    <div>
+                      <div>
 
-                      <strong>
-                        {decision.task_code}
-                      </strong>
+                        <strong>
+                          {
+                            decision.task_code
+                          }
+                        </strong>
 
-                      <span>
-                        {decision.final_action ??
-                          "MAINTENANCE"}
-                      </span>
+                        <span>
+                          {
+                            decision.final_action ??
+                            "MAINTENANCE"
+                          }
+                        </span>
+
+                      </div>
+
+                      <div className="home-ai-score">
+
+                        <strong>
+                          {
+                            decision.ai_decision_score
+                          }
+                        </strong>
+
+                        <span>
+                          {
+                            decision.decision_level
+                          }
+                        </span>
+
+                      </div>
 
                     </div>
 
-                    <div className="home-ai-score">
-
-                      <strong>
-                        {decision.ai_decision_score}
-                      </strong>
-
-                      <span>
-                        {decision.decision_level}
-                      </span>
-
-                    </div>
-
-                  </div>
-
-                ))
+                  )
+                )
 
             ) : (
 
               <div className="home-empty-panel">
-                No urgent AI decisions.
+                No AI maintenance
+                decisions available.
               </div>
 
             )}
@@ -1383,6 +1670,8 @@ function Home() {
       ================================================= */}
 
       <section className="home-bottom-grid">
+
+        {/* NETWORK */}
 
         <div className="home-panel">
 
@@ -1410,7 +1699,9 @@ function Home() {
               </span>
 
               <strong>
-                {stations.length}
+                {
+                  stations.length
+                }
               </strong>
             </div>
 
@@ -1420,7 +1711,9 @@ function Home() {
               </span>
 
               <strong>
-                {sections.length}
+                {
+                  sections.length
+                }
               </strong>
             </div>
 
@@ -1430,7 +1723,9 @@ function Home() {
               </span>
 
               <strong>
-                {assets.length}
+                {
+                  assets.length
+                }
               </strong>
             </div>
 
@@ -1440,7 +1735,9 @@ function Home() {
               </span>
 
               <strong>
-                {maintenanceTasks.length}
+                {
+                  maintenanceTasks.length
+                }
               </strong>
             </div>
 
@@ -1450,7 +1747,9 @@ function Home() {
               </span>
 
               <strong>
-                {openDefects.length}
+                {
+                  openDefects.length
+                }
               </strong>
             </div>
 
@@ -1460,13 +1759,17 @@ function Home() {
               </span>
 
               <strong>
-                {trains.length}
+                {
+                  trains.length
+                }
               </strong>
             </div>
 
           </div>
 
         </div>
+
+        {/* INTEGRATION */}
 
         <div className="home-panel">
 
@@ -1483,13 +1786,13 @@ function Home() {
               </h2>
 
               <p>
-                Unified railway data sources.
+                Unified railway data
+                sources.
               </p>
 
             </div>
 
             {integrationStatus && (
-
               <span
                 className={`home-integration-status ${
                   connectedSystems ===
@@ -1499,10 +1802,14 @@ function Home() {
                     : "attention"
                 }`}
               >
-                {connectedSystems}/
-                {totalSystems}
+                {
+                  connectedSystems
+                }
+                /
+                {
+                  totalSystems
+                }
               </span>
-
             )}
 
           </div>
@@ -1516,7 +1823,9 @@ function Home() {
 
                   <div
                     className="home-integration-item"
-                    key={system.system}
+                    key={
+                      system.system
+                    }
                   >
 
                     <div>
@@ -1524,7 +1833,9 @@ function Home() {
                       <span className="home-system-small-dot" />
 
                       <strong>
-                        {system.system}
+                        {
+                          system.system
+                        }
                       </strong>
 
                     </div>
@@ -1536,9 +1847,11 @@ function Home() {
                           : "disconnected-text"
                       }
                     >
-                      {system.connected
-                        ? "CONNECTED"
-                        : "OFFLINE"}
+                      {
+                        system.connected
+                          ? "CONNECTED"
+                          : "OFFLINE"
+                      }
                     </span>
 
                   </div>
@@ -1551,7 +1864,8 @@ function Home() {
           ) : (
 
             <div className="home-empty-panel">
-              Integration status unavailable.
+              Integration status
+              unavailable.
             </div>
 
           )}
@@ -1565,7 +1879,9 @@ function Home() {
               </span>
 
               <strong>
-                {integrationStatus.mode}
+                {
+                  integrationStatus.mode
+                }
               </strong>
 
             </div>
@@ -1593,10 +1909,11 @@ function Home() {
           </h2>
 
           <p>
-            Railway data moves through ML
-            risk prediction, smart priority,
-            AI decision making and optimized
-            maintenance planning.
+            Railway data moves through
+            ML risk prediction, smart
+            priority, AI decision making
+            and optimized maintenance
+            planning.
           </p>
 
         </div>
@@ -1604,7 +1921,10 @@ function Home() {
         <div className="home-pipeline">
 
           <div className="home-pipeline-step">
-            <span>01</span>
+
+            <span>
+              01
+            </span>
 
             <strong>
               TMS / SMMS / TDMS
@@ -1613,6 +1933,7 @@ function Home() {
             <small>
               Maintenance Data
             </small>
+
           </div>
 
           <div className="home-pipeline-arrow">
@@ -1620,7 +1941,10 @@ function Home() {
           </div>
 
           <div className="home-pipeline-step">
-            <span>02</span>
+
+            <span>
+              02
+            </span>
 
             <strong>
               ML Risk
@@ -1629,6 +1953,7 @@ function Home() {
             <small>
               Asset Risk Prediction
             </small>
+
           </div>
 
           <div className="home-pipeline-arrow">
@@ -1636,7 +1961,10 @@ function Home() {
           </div>
 
           <div className="home-pipeline-step">
-            <span>03</span>
+
+            <span>
+              03
+            </span>
 
             <strong>
               Smart Priority
@@ -1645,6 +1973,7 @@ function Home() {
             <small>
               Task Ranking
             </small>
+
           </div>
 
           <div className="home-pipeline-arrow">
@@ -1652,7 +1981,10 @@ function Home() {
           </div>
 
           <div className="home-pipeline-step">
-            <span>04</span>
+
+            <span>
+              04
+            </span>
 
             <strong>
               AI Decision
@@ -1661,6 +1993,7 @@ function Home() {
             <small>
               Operational Action
             </small>
+
           </div>
 
           <div className="home-pipeline-arrow">
@@ -1668,7 +2001,10 @@ function Home() {
           </div>
 
           <div className="home-pipeline-step">
-            <span>05</span>
+
+            <span>
+              05
+            </span>
 
             <strong>
               Best Plan
@@ -1677,6 +2013,7 @@ function Home() {
             <small>
               Optimized Block
             </small>
+
           </div>
 
         </div>
@@ -1690,7 +2027,8 @@ function Home() {
       <div className="home-footer-note">
 
         <span>
-          🚆 AI Automatic Railway Block Planner
+          🚆 AI Automatic Railway
+          Block Planner
         </span>
 
         <span>
@@ -1707,3 +2045,4 @@ function Home() {
 }
 
 export default Home;
+

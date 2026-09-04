@@ -1,46 +1,24 @@
+
 import {
   useEffect,
   useMemo,
   useState,
 } from "react";
 
+import { authFetch } from "../App";
 import "./AICenter.css";
 
-const API_BASE = "http://127.0.0.1:8000";
-const TOKEN_KEY = "railway_admin_token";
-
 /* =========================================================
-   RAW AUTH FETCH
+   API CONFIG
 ========================================================= */
 
-const authFetch = (url, options = {}) => {
-  const token = localStorage.getItem(TOKEN_KEY);
-
-  return fetch(url, {
-    ...options,
-    headers: {
-      ...(options.headers || {}),
-      Accept: "application/json",
-      ...(token
-        ? {
-            Authorization: `Bearer ${token}`,
-          }
-        : {}),
-    },
-  });
-};
+const API_BASE =
+  import.meta.env.VITE_API_BASE ||
+  "http://127.0.0.1:8000";
 
 /* =========================================================
    HELPERS
 ========================================================= */
-
-const safeJson = async (response) => {
-  try {
-    return await response.json();
-  } catch {
-    return null;
-  }
-};
 
 const normalizeArray = (value) => {
   if (Array.isArray(value)) {
@@ -76,6 +54,14 @@ const normalizeArray = (value) => {
   }
 
   return [];
+};
+
+const safeNumber = (value, fallback = 0) => {
+  const number = Number(value);
+
+  return Number.isFinite(number)
+    ? number
+    : fallback;
 };
 
 const numberValue = (...values) => {
@@ -116,8 +102,17 @@ const statusClass = (value) => {
   return String(
     value || "LOW"
   )
+    .trim()
     .toLowerCase()
-    .replaceAll(" ", "-");
+    .replace(/\s+/g, "-");
+};
+
+const normalizeLevel = (value) => {
+  return String(
+    value || "LOW"
+  )
+    .trim()
+    .toUpperCase();
 };
 
 /* =========================================================
@@ -129,49 +124,73 @@ function AICenter() {
      DATA
   ======================================================= */
 
-  const [assetRisks, setAssetRisks] =
-    useState([]);
+  const [
+    assetRisks,
+    setAssetRisks,
+  ] = useState([]);
 
-  const [smartPriorities, setSmartPriorities] =
-    useState([]);
+  const [
+    smartPriorities,
+    setSmartPriorities,
+  ] = useState([]);
 
-  const [aiDecisions, setAiDecisions] =
-    useState([]);
+  const [
+    aiDecisions,
+    setAiDecisions,
+  ] = useState([]);
 
-  const [aiBestPlan, setAiBestPlan] =
-    useState(null);
+  const [
+    aiBestPlan,
+    setAiBestPlan,
+  ] = useState(null);
 
-  const [aiAgent, setAiAgent] =
-    useState(null);
-
-  /* =======================================================
-     LOADING
-  ======================================================= */
-
-  const [loading, setLoading] =
-    useState(true);
-
-  const [refreshing, setRefreshing] =
-    useState(false);
-
-  const [aiAgentLoading, setAiAgentLoading] =
-    useState(true);
-
-  const [error, setError] =
-    useState("");
+  const [
+    aiAgent,
+    setAiAgent,
+  ] = useState(null);
 
   /* =======================================================
-     ASK AGENT
+     LOADING / ERROR
   ======================================================= */
 
-  const [agentQuestion, setAgentQuestion] =
-    useState("");
+  const [
+    loading,
+    setLoading,
+  ] = useState(true);
 
-  const [agentAnswer, setAgentAnswer] =
-    useState("");
+  const [
+    refreshing,
+    setRefreshing,
+  ] = useState(false);
 
-  const [agentLoading, setAgentLoading] =
-    useState(false);
+  const [
+    aiAgentLoading,
+    setAiAgentLoading,
+  ] = useState(true);
+
+  const [
+    error,
+    setError,
+  ] = useState("");
+
+  /* =======================================================
+     AI AGENT QUESTION
+  ======================================================= */
+
+  const [
+    agentQuestion,
+    setAgentQuestion,
+  ] = useState("");
+
+  const [
+    agentAnswer,
+    setAgentAnswer,
+  ] = useState("");
+
+  const [
+    agentLoading,
+    setAgentLoading,
+  ] = useState(false);
 
   /* =======================================================
      LOAD MAIN AI DATA
@@ -192,13 +211,6 @@ function AICenter() {
 
       setError("");
 
-      /*
-        Important:
-        Every AI endpoint works independently.
-        One slow endpoint does not break the
-        complete AI Center.
-      */
-
       const results =
         await Promise.allSettled([
           authFetch(
@@ -218,6 +230,8 @@ function AICenter() {
           ),
         ]);
 
+      let successfulRequests = 0;
+
       /* =====================================================
          ASSET RISK
       ===================================================== */
@@ -230,12 +244,17 @@ function AICenter() {
           results[0].value;
 
         const data =
-          await safeJson(response);
+          response?.data ??
+          response;
 
-        if (response.ok) {
+        if (
+          response?.ok !== false
+        ) {
           setAssetRisks(
             normalizeArray(data)
           );
+
+          successfulRequests += 1;
         }
       }
 
@@ -251,12 +270,17 @@ function AICenter() {
           results[1].value;
 
         const data =
-          await safeJson(response);
+          response?.data ??
+          response;
 
-        if (response.ok) {
+        if (
+          response?.ok !== false
+        ) {
           setSmartPriorities(
             normalizeArray(data)
           );
+
+          successfulRequests += 1;
         }
       }
 
@@ -272,36 +296,58 @@ function AICenter() {
           results[2].value;
 
         const data =
-          await safeJson(response);
+          response?.data ??
+          response;
 
-        if (response.ok) {
+        if (
+          response?.ok !== false
+        ) {
           setAiDecisions(
             normalizeArray(data)
           );
+
+          successfulRequests += 1;
         }
       }
 
       /* =====================================================
          BEST PLAN
+
+         App.jsx authFetch returns parsed JSON,
+         so no response.json() is required.
       ===================================================== */
 
       if (
         results[3].status ===
         "fulfilled"
       ) {
-        const response =
+        const data =
           results[3].value;
 
-        const data =
-          await safeJson(response);
-
-        if (response.ok) {
+        if (
+          data &&
+          typeof data ===
+            "object"
+        ) {
           setAiBestPlan(
             data?.best_plan ??
               data?.data?.best_plan ??
+              data?.plan ??
+              data?.data?.plan ??
               null
           );
+
+          successfulRequests += 1;
         }
+      }
+
+      if (
+        successfulRequests ===
+        0
+      ) {
+        throw new Error(
+          "Unable to load AI services."
+        );
       }
     } catch (err) {
       console.error(
@@ -320,7 +366,7 @@ function AICenter() {
   };
 
   /* =======================================================
-     LOAD AGENT STATUS SEPARATELY
+     LOAD AI AGENT STATUS
   ======================================================= */
 
   const loadAgentStatus =
@@ -328,24 +374,25 @@ function AICenter() {
       try {
         setAiAgentLoading(true);
 
-        const response =
+        const data =
           await authFetch(
             `${API_BASE}/ai/agent`
           );
 
-        const data =
-          await safeJson(response);
-
-        if (
-          response.ok
-        ) {
-          setAiAgent(data);
-        }
+        setAiAgent(
+          data &&
+            typeof data ===
+              "object"
+            ? data
+            : null
+        );
       } catch (err) {
         console.error(
           "AI Agent status error:",
           err
         );
+
+        setAiAgent(null);
       } finally {
         setAiAgentLoading(false);
       }
@@ -360,17 +407,7 @@ function AICenter() {
       initial: true,
     });
 
-    /*
-      Agent status is separate so it
-      cannot block the main AI dashboard.
-    */
-    const timer = setTimeout(() => {
-      loadAgentStatus();
-    }, 100);
-
-    return () => {
-      clearTimeout(timer);
-    };
+    loadAgentStatus();
   }, []);
 
   /* =======================================================
@@ -386,6 +423,7 @@ function AICenter() {
         setAgentAnswer(
           "Please enter a question."
         );
+
         return;
       }
 
@@ -393,7 +431,7 @@ function AICenter() {
         setAgentLoading(true);
         setAgentAnswer("");
 
-        const response =
+        const data =
           await authFetch(
             `${API_BASE}/ai/agent/ask?question=${encodeURIComponent(
               question
@@ -403,18 +441,19 @@ function AICenter() {
             }
           );
 
-        const data =
-          await safeJson(response);
-
-        if (!response.ok) {
+        if (
+          !data ||
+          typeof data !==
+            "object"
+        ) {
           throw new Error(
-            data?.detail ||
-              `AI Agent request failed: ${response.status}`
+            "Invalid AI Agent response."
           );
         }
 
         setAgentAnswer(
-          data?.answer ||
+          data.answer ||
+            data.response ||
             "No answer received."
         );
       } catch (err) {
@@ -439,85 +478,103 @@ function AICenter() {
   ======================================================= */
 
   const criticalRiskCount =
-    useMemo(
-      () =>
-        assetRisks.filter(
-          (asset) =>
-            asset.risk_level ===
-              "CRITICAL" ||
-            asset.ml_risk_level ===
-              "CRITICAL"
-        ).length,
-      [assetRisks]
-    );
+    useMemo(() => {
+      return assetRisks.filter(
+        (asset) => {
+          const level =
+            normalizeLevel(
+              asset.risk_level ??
+                asset.ml_risk_level
+            );
+
+          return (
+            level === "CRITICAL"
+          );
+        }
+      ).length;
+    }, [assetRisks]);
 
   const highRiskCount =
-    useMemo(
-      () =>
-        assetRisks.filter(
-          (asset) =>
-            asset.risk_level ===
-              "HIGH" ||
-            asset.ml_risk_level ===
-              "HIGH"
-        ).length,
-      [assetRisks]
-    );
+    useMemo(() => {
+      return assetRisks.filter(
+        (asset) => {
+          const level =
+            normalizeLevel(
+              asset.risk_level ??
+                asset.ml_risk_level
+            );
+
+          return (
+            level === "HIGH"
+          );
+        }
+      ).length;
+    }, [assetRisks]);
 
   const urgentDecisionCount =
-    useMemo(
-      () =>
-        aiDecisions.filter(
-          (decision) =>
-            decision.decision_level ===
-            "URGENT"
-        ).length,
-      [aiDecisions]
-    );
+    useMemo(() => {
+      return aiDecisions.filter(
+        (decision) => {
+          const level =
+            normalizeLevel(
+              decision.decision_level ??
+                decision.ai_decision_level
+            );
+
+          return (
+            level === "URGENT"
+          );
+        }
+      ).length;
+    }, [aiDecisions]);
+
+  /* =======================================================
+     SORTED DATA
+  ======================================================= */
 
   const topRiskAssets =
     useMemo(() => {
-      return [...assetRisks].sort(
+      return [
+        ...assetRisks,
+      ].sort(
         (a, b) =>
-          Number(
+          safeNumber(
             b.risk_score ??
-              b.ml_risk_percentage ??
-              0
+              b.ml_risk_percentage
           ) -
-          Number(
+          safeNumber(
             a.risk_score ??
-              a.ml_risk_percentage ??
-              0
+              a.ml_risk_percentage
           )
       );
     }, [assetRisks]);
 
   const sortedPriorities =
     useMemo(() => {
-      return [...smartPriorities].sort(
+      return [
+        ...smartPriorities,
+      ].sort(
         (a, b) =>
-          Number(
-            b.smart_priority_score ??
-              0
+          safeNumber(
+            b.smart_priority_score
           ) -
-          Number(
-            a.smart_priority_score ??
-              0
+          safeNumber(
+            a.smart_priority_score
           )
       );
     }, [smartPriorities]);
 
   const sortedDecisions =
     useMemo(() => {
-      return [...aiDecisions].sort(
+      return [
+        ...aiDecisions,
+      ].sort(
         (a, b) =>
-          Number(
-            b.ai_decision_score ??
-              0
+          safeNumber(
+            b.ai_decision_score
           ) -
-          Number(
-            a.ai_decision_score ??
-              0
+          safeNumber(
+            a.ai_decision_score
           )
       );
     }, [aiDecisions]);
@@ -536,7 +593,6 @@ function AICenter() {
       <section className="ai-center-hero">
 
         <div>
-
           <span className="ai-center-eyebrow">
             ARTIFICIAL INTELLIGENCE
           </span>
@@ -546,12 +602,12 @@ function AICenter() {
           </h1>
 
           <p>
-            Intelligent railway maintenance
-            risk analysis, smart prioritization,
+            Intelligent railway
+            maintenance risk analysis,
+            smart prioritization,
             operational decisions and
             AI-assisted planning.
           </p>
-
         </div>
 
         <div className="ai-hero-actions">
@@ -608,6 +664,7 @@ function AICenter() {
       <section className="ai-summary-grid">
 
         <div className="ai-summary-card">
+
           <span>
             🔴 Critical Risk Assets
           </span>
@@ -621,9 +678,11 @@ function AICenter() {
           <small>
             High-priority asset risk
           </small>
+
         </div>
 
         <div className="ai-summary-card">
+
           <span>
             🟠 High Risk Assets
           </span>
@@ -637,9 +696,11 @@ function AICenter() {
           <small>
             Elevated maintenance risk
           </small>
+
         </div>
 
         <div className="ai-summary-card">
+
           <span>
             ⚡ Urgent AI Decisions
           </span>
@@ -653,9 +714,11 @@ function AICenter() {
           <small>
             Immediate attention
           </small>
+
         </div>
 
         <div className="ai-summary-card">
+
           <span>
             🧠 Smart Priorities
           </span>
@@ -669,6 +732,7 @@ function AICenter() {
           <small>
             AI-ranked maintenance tasks
           </small>
+
         </div>
 
       </section>
@@ -717,6 +781,7 @@ function AICenter() {
 
               <h3>
                 {aiBestPlan.task_code ??
+                  aiBestPlan.task_id ??
                   "Maintenance Task"}
               </h3>
 
@@ -740,7 +805,8 @@ function AICenter() {
 
               <strong>
                 {formatScore(
-                  aiBestPlan.ai_plan_score
+                  aiBestPlan.ai_plan_score ??
+                    aiBestPlan.plan_score
                 )}
               </strong>
 
@@ -749,6 +815,7 @@ function AICenter() {
             <div className="ai-plan-details">
 
               <div>
+
                 <span>
                   AI Decision
                 </span>
@@ -758,9 +825,11 @@ function AICenter() {
                     aiBestPlan.ai_decision_score
                   )}
                 </strong>
+
               </div>
 
               <div>
+
                 <span>
                   Smart Priority
                 </span>
@@ -770,9 +839,11 @@ function AICenter() {
                     aiBestPlan.smart_priority_score
                   )}
                 </strong>
+
               </div>
 
               <div>
+
                 <span>
                   Asset Risk
                 </span>
@@ -782,18 +853,23 @@ function AICenter() {
                     aiBestPlan.asset_risk_score
                   )}
                 </strong>
+
               </div>
 
               <div>
+
                 <span>
                   Train Impact
                 </span>
 
                 <strong>
                   {numberValue(
-                    aiBestPlan.train_impact_level
+                    aiBestPlan.train_impact_level,
+                    aiBestPlan.train_impact,
+                    "NONE"
                   )}
                 </strong>
+
               </div>
 
             </div>
@@ -807,6 +883,7 @@ function AICenter() {
               <strong>
                 {numberValue(
                   aiBestPlan.final_action,
+                  aiBestPlan.recommended_action,
                   "PLAN"
                 )}
               </strong>
@@ -821,6 +898,7 @@ function AICenter() {
 
               <p>
                 {aiBestPlan.recommendation ??
+                  aiBestPlan.reason ??
                   "AI-generated recommendation based on current maintenance and operational conditions."}
               </p>
 
@@ -867,8 +945,9 @@ function AICenter() {
             </h2>
 
             <p>
-              Predicted asset risk based on
-              defects and maintenance workload.
+              Predicted asset risk based
+              on defects and maintenance
+              workload.
             </p>
 
           </div>
@@ -904,14 +983,20 @@ function AICenter() {
               (asset) => {
 
                 const level =
-                  asset.risk_level ??
-                  asset.ml_risk_level ??
-                  "LOW";
+                  normalizeLevel(
+                    asset.risk_level ??
+                      asset.ml_risk_level
+                  );
 
                 const score =
                   asset.risk_score ??
                   asset.ml_risk_percentage ??
                   0;
+
+                const assetKey =
+                  asset.asset_id ??
+                  asset.asset_code ??
+                  asset.id;
 
                 return (
                   <div
@@ -919,8 +1004,7 @@ function AICenter() {
                       level
                     )}`}
                     key={
-                      asset.asset_id ??
-                      asset.asset_code
+                      assetKey
                     }
                   >
 
@@ -930,7 +1014,7 @@ function AICenter() {
 
                         <h3>
                           {asset.asset_code ??
-                            `Asset ${asset.asset_id}`}
+                            `Asset ${asset.asset_id ?? "—"}`}
                         </h3>
 
                         <p>
@@ -954,6 +1038,7 @@ function AICenter() {
                           {formatScore(
                             score
                           )}
+                          %
                         </strong>
 
                       </div>
@@ -963,7 +1048,6 @@ function AICenter() {
                     <div className="ai-mini-grid">
 
                       <div>
-
                         <span>
                           Risk Level
                         </span>
@@ -971,11 +1055,9 @@ function AICenter() {
                         <strong>
                           {level}
                         </strong>
-
                       </div>
 
                       <div>
-
                         <span>
                           Open Defects
                         </span>
@@ -987,11 +1069,9 @@ function AICenter() {
                             0
                           )}
                         </strong>
-
                       </div>
 
                       <div>
-
                         <span>
                           Active Tasks
                         </span>
@@ -1003,53 +1083,57 @@ function AICenter() {
                             0
                           )}
                         </strong>
-
                       </div>
 
                       <div>
-
                         <span>
                           Criticality
                         </span>
 
                         <strong>
                           {numberValue(
-                            asset.criticality
+                            asset.criticality,
+                            level
                           )}
                         </strong>
-
                       </div>
 
                     </div>
 
-                    {asset.risk_factors?.length >
-                      0 && (
+                    {Array.isArray(
+                      asset.risk_factors
+                    ) &&
+                      asset.risk_factors
+                        .length >
+                        0 && (
 
-                      <div className="ai-reasons">
+                        <div className="ai-reasons">
 
-                        <strong>
-                          Risk Factors
-                        </strong>
+                          <strong>
+                            Risk Factors
+                          </strong>
 
-                        {asset.risk_factors.map(
-                          (
-                            factor,
-                            index
-                          ) => (
-                            <p
-                              key={index}
-                            >
-                              • {factor}
-                            </p>
-                          )
-                        )}
+                          {asset.risk_factors.map(
+                            (
+                              factor,
+                              index
+                            ) => (
+                              <p
+                                key={
+                                  index
+                                }
+                              >
+                                •{" "}
+                                {factor}
+                              </p>
+                            )
+                          )}
 
-                      </div>
+                        </div>
 
-                    )}
+                      )}
 
                     {asset.recommendation && (
-
                       <div className="ai-recommendation-box">
 
                         <strong>
@@ -1063,7 +1147,6 @@ function AICenter() {
                         </p>
 
                       </div>
-
                     )}
 
                   </div>
@@ -1130,11 +1213,17 @@ function AICenter() {
           <div className="ai-card-list">
 
             {sortedPriorities.map(
-              (task, index) => {
+              (
+                task,
+                index
+              ) => {
 
                 const level =
-                  task.smart_priority_level ??
-                  "LOW";
+                  normalizeLevel(
+                    task.smart_priority_level ??
+                      task.priority_level ??
+                      task.risk_level
+                  );
 
                 return (
                   <div
@@ -1143,7 +1232,8 @@ function AICenter() {
                     )}`}
                     key={
                       task.task_id ??
-                      task.task_code
+                      task.task_code ??
+                      index
                     }
                   >
 
@@ -1159,7 +1249,7 @@ function AICenter() {
 
                         <h3>
                           {task.task_code ??
-                            "Maintenance Task"}
+                            `Task ${task.task_id ?? "—"}`}
                         </h3>
 
                         <p>
@@ -1293,8 +1383,9 @@ function AICenter() {
             </h2>
 
             <p>
-              AI-assisted decisions considering
-              priority, asset risk and train impact.
+              AI-assisted decisions
+              considering priority, asset
+              risk and train impact.
             </p>
 
           </div>
@@ -1327,11 +1418,16 @@ function AICenter() {
           <div className="ai-card-list">
 
             {sortedDecisions.map(
-              (decision, index) => {
+              (
+                decision,
+                index
+              ) => {
 
                 const level =
-                  decision.decision_level ??
-                  "LOW";
+                  normalizeLevel(
+                    decision.decision_level ??
+                      decision.ai_decision_level
+                  );
 
                 return (
                   <div
@@ -1340,7 +1436,8 @@ function AICenter() {
                     )}`}
                     key={
                       decision.task_id ??
-                      decision.task_code
+                      decision.task_code ??
+                      index
                     }
                   >
 
@@ -1356,7 +1453,7 @@ function AICenter() {
 
                         <h3>
                           {decision.task_code ??
-                            "Maintenance Task"}
+                            `Task ${decision.task_id ?? "—"}`}
                         </h3>
 
                         <p>
@@ -1425,6 +1522,7 @@ function AICenter() {
 
                         <strong>
                           {decision.train_impact_level ??
+                            decision.train_impact ??
                             "NONE"}
                         </strong>
 
@@ -1458,35 +1556,41 @@ function AICenter() {
 
                     </div>
 
-                    {decision.decision_reasons?.length >
-                      0 && (
+                    {Array.isArray(
+                      decision.decision_reasons
+                    ) &&
+                      decision
+                        .decision_reasons
+                        .length >
+                        0 && (
 
-                      <div className="ai-reasons">
+                        <div className="ai-reasons">
 
-                        <strong>
-                          Why AI recommends this
-                        </strong>
+                          <strong>
+                            Why AI recommends this
+                          </strong>
 
-                        {decision.decision_reasons.map(
-                          (
-                            reason,
-                            reasonIndex
-                          ) => (
+                          {decision.decision_reasons.map(
+                            (
+                              reason,
+                              reasonIndex
+                            ) => (
 
-                            <p
-                              key={
-                                reasonIndex
-                              }
-                            >
-                              • {reason}
-                            </p>
+                              <p
+                                key={
+                                  reasonIndex
+                                }
+                              >
+                                •{" "}
+                                {reason}
+                              </p>
 
-                          )
-                        )}
+                            )
+                          )}
 
-                      </div>
+                        </div>
 
-                    )}
+                      )}
 
                     {decision.recommendation && (
                       <div className="ai-recommendation-box">
@@ -1504,22 +1608,29 @@ function AICenter() {
                       </div>
                     )}
 
-                    {decision.affected_train_ids?.length >
-                      0 && (
+                    {Array.isArray(
+                      decision.affected_train_ids
+                    ) &&
+                      decision
+                        .affected_train_ids
+                        .length >
+                        0 && (
 
-                      <div className="affected-trains">
+                        <div className="affected-trains">
 
-                        <strong>
-                          🚆 Affected Trains:
-                        </strong>{" "}
+                          <strong>
+                            🚆 Affected Trains:
+                          </strong>{" "}
 
-                        {decision.affected_train_ids.join(
-                          ", "
-                        )}
+                          {
+                            decision
+                              .affected_train_ids
+                              .join(", ")
+                          }
 
-                      </div>
+                        </div>
 
-                    )}
+                      )}
 
                   </div>
                 );
@@ -1552,7 +1663,8 @@ function AICenter() {
 
             <p>
               Ask questions about railway
-              maintenance, risk and scheduling.
+              maintenance, risk and
+              scheduling.
             </p>
 
           </div>
@@ -1567,7 +1679,9 @@ function AICenter() {
 
           <input
             type="text"
-            value={agentQuestion}
+            value={
+              agentQuestion
+            }
             onChange={(event) =>
               setAgentQuestion(
                 event.target.value
@@ -1582,7 +1696,9 @@ function AICenter() {
               }
             }}
             placeholder="Ask: Why is SMMS001 urgent?"
-            disabled={agentLoading}
+            disabled={
+              agentLoading
+            }
           />
 
           <button
@@ -1591,7 +1707,9 @@ function AICenter() {
             onClick={
               handleAskAgent
             }
-            disabled={agentLoading}
+            disabled={
+              agentLoading
+            }
           >
             {agentLoading
               ? "⏳ Thinking..."
@@ -1609,9 +1727,10 @@ function AICenter() {
             "What is the best maintenance plan?",
           ].map(
             (question) => (
-
               <button
-                key={question}
+                key={
+                  question
+                }
                 type="button"
                 onClick={() =>
                   setAgentQuestion(
@@ -1621,7 +1740,6 @@ function AICenter() {
               >
                 {question}
               </button>
-
             )
           )}
 
@@ -1662,8 +1780,8 @@ function AICenter() {
             </h2>
 
             <p>
-              Current AI operational monitoring
-              summary.
+              Current AI operational
+              monitoring summary.
             </p>
 
           </div>
@@ -1710,8 +1828,10 @@ function AICenter() {
                 </span>
 
                 <strong>
-                  {aiAgent?.open_events ??
-                    0}
+                  {numberValue(
+                    aiAgent?.open_events,
+                    0
+                  )}
                 </strong>
 
               </div>
@@ -1723,8 +1843,10 @@ function AICenter() {
                 </span>
 
                 <strong>
-                  {aiAgent?.critical_assets ??
-                    0}
+                  {numberValue(
+                    aiAgent?.critical_assets,
+                    0
+                  )}
                 </strong>
 
               </div>
@@ -1736,8 +1858,10 @@ function AICenter() {
                 </span>
 
                 <strong>
-                  {aiAgent?.urgent_ai_decisions ??
-                    0}
+                  {numberValue(
+                    aiAgent?.urgent_ai_decisions,
+                    0
+                  )}
                 </strong>
 
               </div>
@@ -1749,8 +1873,10 @@ function AICenter() {
                 </span>
 
                 <strong>
-                  {aiAgent?.conflicted_blocks ??
-                    0}
+                  {numberValue(
+                    aiAgent?.conflicted_blocks,
+                    0
+                  )}
                 </strong>
 
               </div>
@@ -1758,7 +1884,6 @@ function AICenter() {
             </div>
 
             {aiAgent?.summary && (
-
               <div className="ai-agent-summary-text">
 
                 <strong>
@@ -1770,11 +1895,9 @@ function AICenter() {
                 </p>
 
               </div>
-
             )}
 
           </>
-
         )}
 
       </section>
@@ -1784,3 +1907,4 @@ function AICenter() {
 }
 
 export default AICenter;
+

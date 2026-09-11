@@ -10,21 +10,40 @@ const TOKEN_KEY = "railway_admin_token";
    AUTH FETCH
 ========================================================= */
 
-const authFetch = (url, options = {}) => {
+const authFetch = async (url, options = {}) => {
   const token = localStorage.getItem(TOKEN_KEY);
 
-  return fetch(url, {
-    ...options,
-    headers: {
-      ...(options.headers || {}),
-      Accept: "application/json",
-      ...(token
-        ? {
-            Authorization: `Bearer ${token}`,
-          }
-        : {}),
-    },
-  });
+  const loaderMessage =
+    options.loaderMessage ||
+    "Loading railway data...";
+
+  window.dispatchEvent(
+    new CustomEvent("railway-loading-start", {
+      detail: {
+        message: loaderMessage,
+      },
+    })
+  );
+
+  try {
+    return await fetch(url, {
+      ...options,
+      headers: {
+        ...(options.headers || {}),
+        Accept: "application/json",
+
+        ...(token
+          ? {
+              Authorization: `Bearer ${token}`,
+            }
+          : {}),
+      },
+    });
+  } finally {
+    window.dispatchEvent(
+      new Event("railway-loading-end")
+    );
+  }
 };
 
 /* =========================================================
@@ -282,17 +301,31 @@ function Blocks() {
       setError("");
 
       const results =
-        await Promise.allSettled([
-          authFetch(
-            `${API_BASE}/planner/blocks`
-          ),
-          authFetch(
-            `${API_BASE}/sections`
-          ),
-          authFetch(
-            `${API_BASE}/maintenance-tasks`
-          ),
-        ]);
+  await Promise.allSettled([
+    authFetch(
+      `${API_BASE}/planner/blocks`,
+      {
+        loaderMessage:
+          "Loading maintenance blocks...",
+      }
+    ),
+
+    authFetch(
+      `${API_BASE}/sections`,
+      {
+        loaderMessage:
+          "Loading railway sections...",
+      }
+    ),
+
+    authFetch(
+      `${API_BASE}/maintenance-tasks`,
+      {
+        loaderMessage:
+          "Loading maintenance tasks...",
+      }
+    ),
+  ]);
 
       /* -----------------------------------------------------
          BLOCKS
@@ -396,9 +429,13 @@ function Blocks() {
       setAiLoading(true);
 
       const response =
-        await authFetch(
-          `${API_BASE}/ai/decisions`
-        );
+  await authFetch(
+    `${API_BASE}/ai/decisions`,
+    {
+      loaderMessage:
+        "Running AI risk analysis...",
+    }
+  );
 
       const data =
         await safeJson(response);
@@ -435,11 +472,15 @@ function Blocks() {
       setError("");
 
       const response =
-        await authFetch(
-          `${API_BASE}/planner/recommendations?schedule_date=${encodeURIComponent(
-            date
-          )}`
-        );
+  await authFetch(
+    `${API_BASE}/planner/recommendations?schedule_date=${encodeURIComponent(
+      date
+    )}`,
+    {
+      loaderMessage:
+        "AI is finding safe maintenance windows...",
+    }
+  );
 
       const data =
         await safeJson(response);

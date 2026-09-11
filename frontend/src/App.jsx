@@ -1,3 +1,4 @@
+import RailwayLoader from "./components/RailwayLoader";
 import { useState } from "react";
 import {
   BrowserRouter,
@@ -30,9 +31,29 @@ const USER_KEY = "railway_admin_user";
 // ============================================================
 // AUTH FETCH
 // ============================================================
-
 export async function authFetch(url, options = {}) {
   const token = localStorage.getItem(TOKEN_KEY);
+
+  const loaderMessage =
+    options.loaderMessage ||
+    "Loading railway data...";
+
+  const skipGlobalLoader =
+    options.skipGlobalLoader === true;
+
+  const loaderStartTime = Date.now();
+
+  // Show global railway train loader
+  // unless caller explicitly skips it.
+  if (!skipGlobalLoader) {
+    window.dispatchEvent(
+      new CustomEvent("railway-loading-start", {
+        detail: {
+          message: loaderMessage,
+        },
+      })
+    );
+  }
 
   const headers = {
     ...(options.headers || {}),
@@ -42,48 +63,70 @@ export async function authFetch(url, options = {}) {
     headers.Authorization = `Bearer ${token}`;
   }
 
-  const response = await fetch(url, {
-    ...options,
-    headers,
-  });
+  try {
+    const response = await fetch(url, {
+      ...options,
+      headers,
+    });
 
-  const contentType = response.headers.get("content-type") || "";
+    const contentType =
+      response.headers.get("content-type") || "";
 
-  let data = null;
+    let data = null;
 
-  if (contentType.includes("application/json")) {
-    data = await response.json();
-  } else {
-    data = await response.text();
-  }
-
-  if (!response.ok) {
-    let message = `Request failed (${response.status})`;
-
-    if (typeof data === "string") {
-      message = data;
-    } else if (data?.detail) {
-      if (typeof data.detail === "string") {
-        message = data.detail;
-      } else {
-        message = JSON.stringify(data.detail);
-      }
-    } else if (data?.message) {
-      if (typeof data.message === "string") {
-        message = data.message;
-      } else {
-        message = JSON.stringify(data.message);
-      }
-    } else if (data) {
-      message = JSON.stringify(data);
+    if (contentType.includes("application/json")) {
+      data = await response.json();
+    } else {
+      data = await response.text();
     }
 
-    throw new Error(message);
+    if (!response.ok) {
+      let message =
+        `Request failed (${response.status})`;
+
+      if (typeof data === "string") {
+        message = data;
+      } else if (data?.detail) {
+        message =
+          typeof data.detail === "string"
+            ? data.detail
+            : JSON.stringify(data.detail);
+      } else if (data?.message) {
+        message =
+          typeof data.message === "string"
+            ? data.message
+            : JSON.stringify(data.message);
+      } else if (data) {
+        message = JSON.stringify(data);
+      }
+
+      throw new Error(message);
+    }
+
+    return data;
+  } finally {
+    // Keep global railway loader visible briefly
+    // even when the API responds very quickly.
+    const MIN_LOADER_TIME = 800;
+
+    const elapsed =
+      Date.now() - loaderStartTime;
+
+    const remaining =
+      Math.max(
+        0,
+        MIN_LOADER_TIME - elapsed
+      );
+
+    if (!skipGlobalLoader) {
+      setTimeout(() => {
+        window.dispatchEvent(
+          new Event("railway-loading-end")
+        );
+      }, remaining);
+    }
   }
-
-  return data;
 }
-
 // ============================================================
 // APP
 // ============================================================
@@ -420,23 +463,25 @@ function App() {
   // AUTHENTICATED LAYOUT
   // ==========================================================
 
-  return (
-    <BrowserRouter>
+  return ( 
+  <BrowserRouter>
 
-      <div className="app">
-
-        {/* ====================================================
-            NAVBAR
-            ==================================================== */}
-
-        <Navbar
-          currentUser={
-            currentUser
-          }
-          onLogout={
-            handleLogout
-          }
-        />
+    <RailwayLoader />
+ 
+    <div className="app"> 
+ 
+      {/* ==================================================== 
+          NAVBAR 
+          ==================================================== */} 
+ 
+      <Navbar 
+        currentUser={ 
+          currentUser 
+        } 
+        onLogout={ 
+          handleLogout 
+        } 
+      /> 
 
 
         {/* ====================================================

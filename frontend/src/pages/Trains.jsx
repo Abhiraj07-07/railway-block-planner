@@ -103,18 +103,26 @@ function Trains() {
       setLoading(true);
       setError("");
 
-      const [
-        trainsData,
-        scheduleData,
-      ] = await Promise.all([
-        authFetch(
-          `${API_BASE}/trains`
-        ),
+const [
+  trainsData,
+  scheduleData,
+] = await Promise.all([
+  authFetch(
+    `${API_BASE}/trains`,
+    {
+      loaderMessage:
+        "Loading train schedules...",
+    }
+  ),
 
-        authFetch(
-          `${API_BASE}/train-schedule`
-        ),
-      ]);
+  authFetch(
+    `${API_BASE}/train-schedule`,
+    {
+      loaderMessage:
+        "Building railway movement schedule...",
+    }
+  ),
+]);
 
       setTrains(
         normalizeArray(trainsData)

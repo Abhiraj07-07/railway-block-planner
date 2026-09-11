@@ -211,26 +211,25 @@ function AICenter() {
 
       setError("");
 
-      const results =
-        await Promise.allSettled([
-          authFetch(
-            `${API_BASE}/ai/risk/assets`
-          ),
+     const results = await Promise.allSettled([
+  authFetch(`${API_BASE}/ai/risk/assets`, {
+    loaderMessage: "Analyzing railway asset risk...",
+  }),
 
-          authFetch(
-            `${API_BASE}/ai/smart-priority`
-          ),
+  authFetch(`${API_BASE}/ai/smart-priority`, {
+    loaderMessage: "Calculating smart maintenance priorities...",
+  }),
 
-          authFetch(
-            `${API_BASE}/ai/decisions`
-          ),
+  authFetch(`${API_BASE}/ai/decisions`, {
+    loaderMessage: "Generating AI operational decisions...",
+  }),
 
-          authFetch(
-            `${API_BASE}/ai/best-plan`
-          ),
-        ]);
+  authFetch(`${API_BASE}/ai/best-plan`, {
+    loaderMessage: "Finding the best maintenance plan...",
+  }),
+]);
 
-      let successfulRequests = 0;
+let successfulRequests = 0;
 
       /* =====================================================
          ASSET RISK
@@ -374,10 +373,9 @@ function AICenter() {
       try {
         setAiAgentLoading(true);
 
-        const data =
-          await authFetch(
-            `${API_BASE}/ai/agent`
-          );
+        const data = await authFetch(`${API_BASE}/ai/agent`, {
+  loaderMessage: "Checking AI agent status...",
+});
 
         setAiAgent(
           data &&
@@ -431,15 +429,13 @@ function AICenter() {
         setAgentLoading(true);
         setAgentAnswer("");
 
-        const data =
-          await authFetch(
-            `${API_BASE}/ai/agent/ask?question=${encodeURIComponent(
-              question
-            )}`,
-            {
-              method: "POST",
-            }
-          );
+        const data = await authFetch(
+  `${API_BASE}/ai/agent/ask?question=${encodeURIComponent(question)}`,
+  {
+    method: "POST",
+    loaderMessage: "AI agent is thinking...",
+  }
+);
 
         if (
           !data ||

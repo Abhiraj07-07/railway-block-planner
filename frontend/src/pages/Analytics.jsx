@@ -21,6 +21,21 @@ const TOKEN_KEY = "railway_admin_token";
 const authFetch = (url, options = {}) => {
   const token = localStorage.getItem(TOKEN_KEY);
 
+  const loaderMessage =
+    options.loaderMessage ||
+    "Loading railway analytics...";
+
+  window.dispatchEvent(
+    new CustomEvent(
+      "railway-loading-start",
+      {
+        detail: {
+          message: loaderMessage,
+        },
+      }
+    )
+  );
+
   return fetch(url, {
     ...options,
     headers: {
@@ -32,6 +47,12 @@ const authFetch = (url, options = {}) => {
           }
         : {}),
     },
+  }).finally(() => {
+    window.dispatchEvent(
+      new Event(
+        "railway-loading-end"
+      )
+    );
   });
 };
 
@@ -51,8 +72,12 @@ function Analytics() {
         setError("");
 
         const response = await authFetch(
-          `${API_BASE}/admin/analytics`
-        );
+  `${API_BASE}/admin/analytics`,
+  {
+    loaderMessage:
+      "Loading management analytics...",
+  }
+);
 
         const data = await response
           .json()

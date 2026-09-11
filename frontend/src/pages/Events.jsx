@@ -19,9 +19,22 @@ const authFetch = (
   options = {}
 ) => {
   const token =
-    localStorage.getItem(
-      TOKEN_KEY
-    );
+    localStorage.getItem(TOKEN_KEY);
+
+  const loaderMessage =
+    options.loaderMessage ||
+    "Loading railway data...";
+
+  window.dispatchEvent(
+    new CustomEvent(
+      "railway-loading-start",
+      {
+        detail: {
+          message: loaderMessage,
+        },
+      }
+    )
+  );
 
   return fetch(url, {
     ...options,
@@ -35,9 +48,14 @@ const authFetch = (
           }
         : {}),
     },
+  }).finally(() => {
+    window.dispatchEvent(
+      new Event(
+        "railway-loading-end"
+      )
+    );
   });
 };
-
 /* =========================================================
    HELPERS
 ========================================================= */
@@ -268,12 +286,14 @@ function Events() {
       setError("");
 
       const response =
-        await authFetch(
-          `${API_BASE}/events`,
-          {
-            method: "GET",
-          }
-        );
+  await authFetch(
+    `${API_BASE}/events`,
+    {
+      method: "GET",
+      loaderMessage:
+        "Loading operational events...",
+    }
+  );
 
       const data =
         await parseApiResponse(
@@ -448,12 +468,14 @@ function Events() {
         }
 
         const response =
-          await authFetch(
-            `${API_BASE}/events?${params.toString()}`,
-            {
-              method: "POST",
-            }
-          );
+  await authFetch(
+    `${API_BASE}/events?${params.toString()}`,
+    {
+      method: "POST",
+      loaderMessage:
+        "Creating operational event...",
+    }
+  );
 
         const data =
           await parseApiResponse(
@@ -563,12 +585,14 @@ function Events() {
       setError("");
 
       const response =
-        await authFetch(
-          `${API_BASE}/events/${eventId}/replan`,
-          {
-            method: "POST",
-          }
-        );
+  await authFetch(
+    `${API_BASE}/events/${eventId}/replan`,
+    {
+      method: "POST",
+      loaderMessage:
+        "AI is analyzing event impact and re-planning...",
+    }
+  );
 
       const data =
         await parseApiResponse(
@@ -635,12 +659,14 @@ function Events() {
         setError("");
 
         const response =
-          await authFetch(
-            `${API_BASE}/events/${eventId}/apply-replan`,
-            {
-              method: "POST",
-            }
-          );
+  await authFetch(
+    `${API_BASE}/events/${eventId}/apply-replan`,
+    {
+      method: "POST",
+      loaderMessage:
+        "Applying AI whole-block re-plan...",
+    }
+  );
 
         const data =
           await parseApiResponse(
@@ -775,12 +801,14 @@ function Events() {
         setError("");
 
         const response =
-          await authFetch(
-            `${API_BASE}/events/${eventId}/apply-task-replan`,
-            {
-              method: "POST",
-            }
-          );
+  await authFetch(
+    `${API_BASE}/events/${eventId}/apply-task-replan`,
+    {
+      method: "POST",
+      loaderMessage:
+        "Applying AI task-level re-plan...",
+    }
+  );
 
         const data =
           await parseApiResponse(

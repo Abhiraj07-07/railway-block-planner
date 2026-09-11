@@ -12,6 +12,16 @@ const API_BASE =
   import.meta.env.VITE_API_BASE ||
   "http://127.0.0.1:8000";
 
+const homeFetch = (
+  url,
+  options = {}
+) => {
+  return authFetch(url, {
+    ...options,
+    skipGlobalLoader: true,
+  });
+};  
+
 const MIN_LOADING_TIME = 1000;
 
 /* =========================================================
@@ -169,80 +179,79 @@ function Home() {
       setError("");
 
       const requests = [
-        {
-          key: "blocks",
-          request: authFetch(
-            `${API_BASE}/planner/blocks`
-          ),
-        },
-        {
-          key: "maintenance",
-          request: authFetch(
-            `${API_BASE}/maintenance-tasks`
-          ),
-        },
-        {
-          key: "events",
-          request: authFetch(
-            `${API_BASE}/events`
-          ),
-        },
-        {
-          key: "trains",
-          request: authFetch(
-            `${API_BASE}/trains`
-          ),
-        },
-        {
-          key: "stations",
-          request: authFetch(
-            `${API_BASE}/stations`
-          ),
-        },
-        {
-          key: "sections",
-          request: authFetch(
-            `${API_BASE}/sections`
-          ),
-        },
-        {
-          key: "assets",
-          request: authFetch(
-            `${API_BASE}/assets`
-          ),
-        },
-        {
-          key: "defects",
-          request: authFetch(
-            `${API_BASE}/defects`
-          ),
-        },
-        {
-          key: "ml",
-          request: authFetch(
-            `${API_BASE}/ai/ml-risk/assets`
-          ),
-        },
-        {
-          key: "decisions",
-          request: authFetch(
-            `${API_BASE}/ai/decisions`
-          ),
-        },
-        {
-          key: "bestPlan",
-          request: authFetch(
-            `${API_BASE}/ai/best-plan`
-          ),
-        },
-        {
-          key: "integration",
-          request: authFetch(
-            `${API_BASE}/integration/status`
-          ),
-        },
-      ];
-
+  {
+    key: "blocks",
+    request: homeFetch(
+      `${API_BASE}/planner/blocks`
+    ),
+  },
+  {
+    key: "maintenance",
+    request: homeFetch(
+      `${API_BASE}/maintenance-tasks`
+    ),
+  },
+  {
+    key: "events",
+    request: homeFetch(
+      `${API_BASE}/events`
+    ),
+  },
+  {
+    key: "trains",
+    request: homeFetch(
+      `${API_BASE}/trains`
+    ),
+  },
+  {
+    key: "stations",
+    request: homeFetch(
+      `${API_BASE}/stations`
+    ),
+  },
+  {
+    key: "sections",
+    request: homeFetch(
+      `${API_BASE}/sections`
+    ),
+  },
+  {
+    key: "assets",
+    request: homeFetch(
+      `${API_BASE}/assets`
+    ),
+  },
+  {
+    key: "defects",
+    request: homeFetch(
+      `${API_BASE}/defects`
+    ),
+  },
+  {
+    key: "ml",
+    request: homeFetch(
+      `${API_BASE}/ai/ml-risk/assets`
+    ),
+  },
+  {
+    key: "decisions",
+    request: homeFetch(
+      `${API_BASE}/ai/decisions`
+    ),
+  },
+  {
+    key: "bestPlan",
+    request: homeFetch(
+      `${API_BASE}/ai/best-plan`
+    ),
+  },
+  {
+    key: "integration",
+    request: homeFetch(
+      `${API_BASE}/integration/status`
+    ),
+  },
+];
       const results =
         await Promise.allSettled(
           requests.map(

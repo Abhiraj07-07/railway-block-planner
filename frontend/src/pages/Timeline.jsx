@@ -642,21 +642,37 @@ function Timeline() {
           decisionsData,
         ] =
           await Promise.all([
-            apiRequest(
-              `${API_BASE}/planner/blocks`
-            ),
+       apiRequest(
+  `${API_BASE}/planner/blocks`,
+  {
+    loaderMessage:
+      "Loading maintenance blocks...",
+  }
+),
 
-            apiRequest(
-              `${API_BASE}/train-schedule`
-            ),
+apiRequest(
+  `${API_BASE}/train-schedule`,
+  {
+    loaderMessage:
+      "Loading train movements...",
+  }
+),
 
-            apiRequest(
-              `${API_BASE}/maintenance-tasks`
-            ),
+apiRequest(
+  `${API_BASE}/maintenance-tasks`,
+  {
+    loaderMessage:
+      "Loading maintenance tasks...",
+  }
+),
 
-            apiRequest(
-              `${API_BASE}/ai/decisions`
-            ),
+apiRequest(
+  `${API_BASE}/ai/decisions`,
+  {
+    loaderMessage:
+      "Loading AI decisions...",
+  }
+),
           ]);
 
         setBlocks(
@@ -806,27 +822,31 @@ function Timeline() {
           );
         }
 
-        const data =
-          await apiRequest(
-            `${API_BASE}/planner/horizon-plan`,
-            {
-              method: "POST",
-              headers: {
-                "Content-Type":
-                  "application/json",
-              },
-              body: JSON.stringify({
-                start_date:
-                  planningStartDate,
+       const data =
+  await apiRequest(
+    `${API_BASE}/planner/horizon-plan`,
+    {
+      method: "POST",
+      loaderMessage:
+        planningMode === "MONTHLY"
+          ? "AI is generating monthly maintenance plan..."
+          : "AI is generating weekly maintenance plan...",
+      headers: {
+        "Content-Type":
+          "application/json",
+      },
+      body: JSON.stringify({
+        start_date:
+          planningStartDate,
 
-                end_date:
-                  planningEndDate,
+        end_date:
+          planningEndDate,
 
-                horizon:
-                  planningMode,
-              }),
-            }
-          );
+        horizon:
+          planningMode,
+      }),
+    }
+  );
 
         if (
           !data ||
@@ -981,20 +1001,21 @@ function Timeline() {
             );
 
         const data =
-          await apiRequest(
-            `${API_BASE}/planner/create-block?${params.toString()}`,
-            {
-              method: "POST",
-              headers: {
-                "Content-Type":
-                  "application/json",
-              },
-              body: JSON.stringify(
-                numericTaskIds
-              ),
-            }
-          );
-
+  await apiRequest(
+    `${API_BASE}/planner/create-block?${params.toString()}`,
+    {
+      method: "POST",
+      loaderMessage:
+        "Creating approved maintenance block...",
+      headers: {
+        "Content-Type":
+          "application/json",
+      },
+      body: JSON.stringify(
+        numericTaskIds
+      ),
+    }
+  );
         setApprovalSuccess(
           data?.message ||
             "Maintenance block created successfully."

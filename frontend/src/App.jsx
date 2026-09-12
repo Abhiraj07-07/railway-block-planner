@@ -1,5 +1,5 @@
-import RailwayLoader from "./components/RailwayLoader";
 import { useState } from "react";
+
 import {
   BrowserRouter,
   Routes,
@@ -7,6 +7,7 @@ import {
   Navigate,
 } from "react-router-dom";
 
+import RailwayLoader from "./components/RailwayLoader";
 import Navbar from "./components/Navbar";
 
 import Home from "./pages/Home";
@@ -20,17 +21,24 @@ import Analytics from "./pages/Analytics";
 import "./App.css";
 
 // ============================================================
-// API CONFIG
+// API CONFIGURATION
 // ============================================================
 
 const API_BASE =
-  import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000";
-const TOKEN_KEY = "railway_admin_token";
-const USER_KEY = "railway_admin_user";
+  import.meta.env.VITE_API_BASE?.trim().replace(/\/+$/, "") ||
+  "https://serene-perfection-production-261b.up.railway.app";
 
 // ============================================================
-// AUTH FETCH
+// AUTH STORAGE KEYS
 // ============================================================
+
+const TOKEN_KEY = "railway_token";
+const USER_KEY = "railway_user";
+
+// ============================================================
+// COMMON AUTH FETCH
+// ============================================================
+
 export async function authFetch(url, options = {}) {
   const token = localStorage.getItem(TOKEN_KEY);
 
@@ -43,8 +51,10 @@ export async function authFetch(url, options = {}) {
 
   const loaderStartTime = Date.now();
 
-  // Show global railway train loader
-  // unless caller explicitly skips it.
+  // ----------------------------------------------------------
+  // START GLOBAL LOADER
+  // ----------------------------------------------------------
+
   if (!skipGlobalLoader) {
     window.dispatchEvent(
       new CustomEvent("railway-loading-start", {
@@ -55,78 +65,178 @@ export async function authFetch(url, options = {}) {
     );
   }
 
+  // ----------------------------------------------------------
+  // PREPARE HEADERS
+  // ----------------------------------------------------------
+
   const headers = {
     ...(options.headers || {}),
   };
 
+  // ----------------------------------------------------------
+  // JSON BODY HANDLING
+  // ----------------------------------------------------------
+
+  const hasContentType =
+    headers["Content-Type"] ||
+    headers["content-type"];
+
+  const isFormData =
+    typeof FormData !== "undefined" &&
+    options.body instanceof FormData;
+
+  const isUrlSearchParams =
+    typeof URLSearchParams !== "undefined" &&
+    options.body instanceof URLSearchParams;
+
+  if (
+    options.body &&
+    !hasContentType &&
+    !isFormData &&
+    !isUrlSearchParams
+  ) {
+    headers["Content-Type"] =
+      "application/json";
+  }
+
+  // ----------------------------------------------------------
+  // AUTHORIZATION
+  // ----------------------------------------------------------
+
   if (token) {
-    headers.Authorization = `Bearer ${token}`;
+    headers.Authorization =
+      `Bearer ${token}`;
   }
 
   try {
+    // --------------------------------------------------------
+    // REQUEST
+    // --------------------------------------------------------
+
     const response = await fetch(url, {
       ...options,
       headers,
     });
 
+    // --------------------------------------------------------
+    // RESPONSE TYPE
+    // --------------------------------------------------------
+
     const contentType =
-      response.headers.get("content-type") || "";
+      response.headers.get(
+        "content-type"
+      ) || "";
 
     let data = null;
 
-    if (contentType.includes("application/json")) {
-      data = await response.json();
+    if (
+      contentType.includes(
+        "application/json"
+      )
+    ) {
+      data =
+        await response.json();
     } else {
-      data = await response.text();
+      data =
+        await response.text();
     }
+
+    // --------------------------------------------------------
+    // ERROR HANDLING
+    // --------------------------------------------------------
 
     if (!response.ok) {
       let message =
         `Request failed (${response.status})`;
 
-      if (typeof data === "string") {
-        message = data;
-      } else if (data?.detail) {
+      if (
+        typeof data === "string"
+      ) {
+        if (data.trim()) {
+          message = data;
+        }
+      } else if (
+        data?.detail
+      ) {
         message =
-          typeof data.detail === "string"
+          typeof data.detail ===
+          "string"
             ? data.detail
-            : JSON.stringify(data.detail);
-      } else if (data?.message) {
+            : JSON.stringify(
+                data.detail
+              );
+      } else if (
+        data?.message
+      ) {
         message =
-          typeof data.message === "string"
+          typeof data.message ===
+          "string"
             ? data.message
-            : JSON.stringify(data.message);
+            : JSON.stringify(
+                data.message
+              );
       } else if (data) {
-        message = JSON.stringify(data);
+        message =
+          JSON.stringify(data);
+      }
+
+      // ------------------------------------------------------
+      // INVALID / EXPIRED TOKEN
+      // ------------------------------------------------------
+
+      if (
+        response.status === 401 ||
+        response.status === 403
+      ) {
+        localStorage.removeItem(
+          TOKEN_KEY
+        );
+
+        localStorage.removeItem(
+          USER_KEY
+        );
       }
 
       throw new Error(message);
     }
 
+    // --------------------------------------------------------
+    // SUCCESS
+    // --------------------------------------------------------
+
     return data;
+
   } finally {
-    // Keep global railway loader visible briefly
-    // even when the API responds very quickly.
+
+    // --------------------------------------------------------
+    // MINIMUM LOADER TIME
+    // --------------------------------------------------------
+
     const MIN_LOADER_TIME = 800;
 
     const elapsed =
-      Date.now() - loaderStartTime;
+      Date.now() -
+      loaderStartTime;
 
     const remaining =
       Math.max(
         0,
-        MIN_LOADER_TIME - elapsed
+        MIN_LOADER_TIME -
+          elapsed
       );
 
     if (!skipGlobalLoader) {
       setTimeout(() => {
         window.dispatchEvent(
-          new Event("railway-loading-end")
+          new Event(
+            "railway-loading-end"
+          )
         );
       }, remaining);
     }
   }
 }
+
 // ============================================================
 // APP
 // ============================================================
@@ -134,41 +244,42 @@ export async function authFetch(url, options = {}) {
 function App() {
 
   // ==========================================================
-  // AUTHENTICATION STATE
+  // CURRENT USER
   // ==========================================================
-
-  const [token, setToken] = useState(
-    () =>
-      localStorage.getItem(
-        TOKEN_KEY
-      )
-  );
 
   const [currentUser, setCurrentUser] =
     useState(() => {
-
-      const savedUser =
-        localStorage.getItem(
-          USER_KEY
-        );
-
-      if (!savedUser) {
-        return null;
-      }
-
       try {
+        const savedUser =
+          localStorage.getItem(
+            USER_KEY
+          );
+
+        if (!savedUser) {
+          return null;
+        }
+
         return JSON.parse(
           savedUser
         );
+
       } catch {
+        localStorage.removeItem(
+          USER_KEY
+        );
+
         return null;
       }
     });
 
-  const [loginUsername, setLoginUsername] =
+  // ==========================================================
+  // LOGIN FORM STATE
+  // ==========================================================
+
+  const [username, setUsername] =
     useState("");
 
-  const [loginPassword, setLoginPassword] =
+  const [password, setPassword] =
     useState("");
 
   const [loginLoading, setLoginLoading] =
@@ -176,7 +287,6 @@ function App() {
 
   const [loginError, setLoginError] =
     useState("");
-
 
   // ==========================================================
   // LOGIN
@@ -186,11 +296,19 @@ function App() {
 
     event.preventDefault();
 
-    const username =
-      loginUsername.trim();
+    setLoginError("");
 
-    if (!username || !loginPassword) {
+    const cleanUsername =
+      username.trim();
 
+    // --------------------------------------------------------
+    // VALIDATION
+    // --------------------------------------------------------
+
+    if (
+      !cleanUsername ||
+      !password
+    ) {
       setLoginError(
         "Please enter username and password."
       );
@@ -198,22 +316,26 @@ function App() {
       return;
     }
 
+    setLoginLoading(true);
+
     try {
 
-      setLoginLoading(true);
-      setLoginError("");
+      // ------------------------------------------------------
+      // BACKEND LOGIN
+      // POST /auth/login
+      // ------------------------------------------------------
 
-      const formData =
+      const loginBody =
         new URLSearchParams();
 
-      formData.append(
+      loginBody.append(
         "username",
-        username
+        cleanUsername
       );
 
-      formData.append(
+      loginBody.append(
         "password",
-        loginPassword
+        password
       );
 
       const response =
@@ -231,57 +353,153 @@ function App() {
             },
 
             body:
-              formData.toString(),
+              loginBody.toString(),
           }
         );
 
-      const data =
-        await response
-          .json()
-          .catch(() => null);
+      // ------------------------------------------------------
+      // PARSE RESPONSE
+      // ------------------------------------------------------
+
+      const contentType =
+        response.headers.get(
+          "content-type"
+        ) || "";
+
+      let data = null;
+
+      if (
+        contentType.includes(
+          "application/json"
+        )
+      ) {
+        data =
+          await response.json();
+      } else {
+        data =
+          await response.text();
+      }
+
+      // ------------------------------------------------------
+      // LOGIN ERROR
+      // ------------------------------------------------------
 
       if (!response.ok) {
 
+        let message =
+          "Login failed.";
+
+        if (
+          typeof data === "string"
+        ) {
+
+          if (data.trim()) {
+            message = data;
+          }
+
+        } else if (
+          data?.detail
+        ) {
+
+          message =
+            typeof data.detail ===
+            "string"
+              ? data.detail
+              : JSON.stringify(
+                  data.detail
+                );
+
+        } else if (
+          data?.message
+        ) {
+
+          message =
+            typeof data.message ===
+            "string"
+              ? data.message
+              : JSON.stringify(
+                  data.message
+                );
+
+        } else if (data) {
+
+          message =
+            JSON.stringify(data);
+        }
+
+        throw new Error(message);
+      }
+
+      // ------------------------------------------------------
+      // GET ACCESS TOKEN
+      // ------------------------------------------------------
+
+      const token =
+        data?.access_token;
+
+      if (!token) {
         throw new Error(
-          data?.detail ||
-          `Login failed with status ${response.status}`
+          "Login successful, but access token was not received from the server."
         );
       }
 
-      if (!data?.access_token) {
+      // ------------------------------------------------------
+      // GET USER
+      // ------------------------------------------------------
 
-        throw new Error(
-          "Login succeeded but no access token was returned."
-        );
-      }
+      const user = {
+        user_id:
+          data?.user?.user_id,
 
-      // Save token
+        username:
+          data?.user?.username ||
+          cleanUsername,
+
+        role:
+          data?.user?.role ||
+          "ADMIN",
+      };
+
+      // ------------------------------------------------------
+      // SAVE TOKEN
+      // ------------------------------------------------------
+
       localStorage.setItem(
         TOKEN_KEY,
-        data.access_token
+        token
       );
 
-      // Save user
+      // ------------------------------------------------------
+      // SAVE USER
+      // ------------------------------------------------------
+
       localStorage.setItem(
         USER_KEY,
-        JSON.stringify(
-          data.user || {
-            username,
-          }
-        )
+        JSON.stringify(user)
       );
 
-      setToken(
-        data.access_token
+      // ------------------------------------------------------
+      // IMPORTANT:
+      // ALWAYS START FROM HOME AFTER LOGIN
+      // ------------------------------------------------------
+
+      window.history.replaceState(
+        null,
+        "",
+        "/home"
       );
 
-      setCurrentUser(
-        data.user || {
-          username,
-        }
-      );
+      // ------------------------------------------------------
+      // UPDATE APP STATE
+      // ------------------------------------------------------
 
-      setLoginPassword("");
+      setCurrentUser(user);
+
+      setUsername("");
+
+      setPassword("");
+
+      setLoginError("");
 
     } catch (error) {
 
@@ -291,23 +509,25 @@ function App() {
       );
 
       setLoginError(
-        error.message ||
-        "Unable to login."
+        error?.message ||
+        "Unable to login. Please try again."
       );
 
     } finally {
 
       setLoginLoading(false);
-
     }
   };
-
 
   // ==========================================================
   // LOGOUT
   // ==========================================================
 
   const handleLogout = () => {
+
+    // --------------------------------------------------------
+    // REMOVE AUTH DATA
+    // --------------------------------------------------------
 
     localStorage.removeItem(
       TOKEN_KEY
@@ -317,106 +537,147 @@ function App() {
       USER_KEY
     );
 
-    setToken(null);
+    // --------------------------------------------------------
+    // CLEAR APP STATE
+    // --------------------------------------------------------
+
     setCurrentUser(null);
 
-    setLoginUsername("");
-    setLoginPassword("");
-    setLoginError("");
-  };
+    setUsername("");
 
+    setPassword("");
+
+    setLoginError("");
+
+    // --------------------------------------------------------
+    // IMPORTANT:
+    // RESET ROUTE TO HOME
+    //
+    // So after logout/login cycle,
+    // user never remains on old page.
+    // --------------------------------------------------------
+
+    window.history.replaceState(
+      null,
+      "",
+      "/home"
+    );
+  };
 
   // ==========================================================
   // LOGIN SCREEN
   // ==========================================================
 
-  if (!token) {
+  if (!currentUser) {
 
     return (
+
       <div className="login-page">
 
         <div className="login-card">
 
-          <div className="login-icon">
-            🚆
+          {/* LOGIN BRAND */}
+
+          <div className="login-brand">
+
+            <div className="login-brand-icon">
+              🚄
+            </div>
+
+            <div className="login-brand-name">
+              RailYojana AI
+            </div>
+
+            <div className="login-brand-subtitle">
+              AI Operations Control
+            </div>
+
           </div>
 
+          {/* TITLE */}
+
           <h1>
-            AI Automatic Railway
-            Block Planner
+            RailYojana AI
           </h1>
 
           <p className="login-subtitle">
             Admin Control Panel
           </p>
 
+          {/* LOGIN ERROR */}
 
-          <form onSubmit={handleLogin}>
+          {loginError && (
+            <div className="login-error">
+              {loginError}
+            </div>
+          )}
+
+          {/* LOGIN FORM */}
+
+          <form
+            onSubmit={handleLogin}
+            className="login-form"
+          >
 
             {/* USERNAME */}
 
             <div className="login-field">
 
-              <label>
+              <label htmlFor="username">
                 Username
               </label>
 
               <input
+                id="username"
                 type="text"
-                value={
-                  loginUsername
-                }
+                value={username}
+
                 onChange={(event) =>
-                  setLoginUsername(
+                  setUsername(
                     event.target.value
                   )
                 }
-                placeholder="Enter admin username"
+
+                placeholder="Enter username"
+
                 autoComplete="username"
+
                 disabled={
                   loginLoading
                 }
               />
 
             </div>
-
 
             {/* PASSWORD */}
 
             <div className="login-field">
 
-              <label>
+              <label htmlFor="password">
                 Password
               </label>
 
               <input
+                id="password"
                 type="password"
-                value={
-                  loginPassword
-                }
+                value={password}
+
                 onChange={(event) =>
-                  setLoginPassword(
+                  setPassword(
                     event.target.value
                   )
                 }
+
                 placeholder="Enter password"
+
                 autoComplete="current-password"
+
                 disabled={
                   loginLoading
                 }
               />
 
             </div>
-
-
-            {/* ERROR */}
-
-            {loginError && (
-              <div className="login-error">
-                ❌ {loginError}
-              </div>
-            )}
-
 
             {/* LOGIN BUTTON */}
 
@@ -428,28 +689,17 @@ function App() {
               }
             >
               {loginLoading
-                ? "⏳ Signing in..."
-                : "🔐 Admin Login"}
+                ? "Signing in..."
+                : "Login"}
             </button>
 
           </form>
 
-
-          {/* FOOTER */}
+          {/* LOGIN FOOTER */}
 
           <div className="login-footer">
-
-            <div>
-              🔒 Authorized personnel only
-            </div>
-
-            <div className="project-leader">
-              Project Leader:{" "}
-              <strong>
-                Abhishek Kumar
-              </strong>
-            </div>
-
+            Railway Infrastructure
+            Intelligence Platform
           </div>
 
         </div>
@@ -458,35 +708,32 @@ function App() {
     );
   }
 
-
   // ==========================================================
-  // AUTHENTICATED LAYOUT
+  // MAIN APPLICATION
   // ==========================================================
 
-  return ( 
-  <BrowserRouter>
+  return (
 
-    <RailwayLoader />
- 
-    <div className="app"> 
- 
-      {/* ==================================================== 
-          NAVBAR 
-          ==================================================== */} 
- 
-      <Navbar 
-        currentUser={ 
-          currentUser 
-        } 
-        onLogout={ 
-          handleLogout 
-        } 
-      /> 
+    <BrowserRouter>
 
+      {/* GLOBAL RAILWAY LOADER */}
 
-        {/* ====================================================
-            MAIN CONTENT
-            ==================================================== */}
+      <RailwayLoader />
+
+      <div className="app">
+
+        {/* NAVBAR */}
+
+        <Navbar
+          currentUser={
+            currentUser
+          }
+          onLogout={
+            handleLogout
+          }
+        />
+
+        {/* MAIN CONTENT */}
 
         <main className="container">
 
@@ -504,7 +751,6 @@ function App() {
               }
             />
 
-
             {/* HOME */}
 
             <Route
@@ -513,7 +759,6 @@ function App() {
                 <Home />
               }
             />
-
 
             {/* BLOCKS */}
 
@@ -524,7 +769,6 @@ function App() {
               }
             />
 
-
             {/* TRAINS */}
 
             <Route
@@ -534,8 +778,7 @@ function App() {
               }
             />
 
-
-            {/* AI */}
+            {/* AI CENTER */}
 
             <Route
               path="/ai"
@@ -543,7 +786,6 @@ function App() {
                 <AICenter />
               }
             />
-
 
             {/* EVENTS */}
 
@@ -554,7 +796,6 @@ function App() {
               }
             />
 
-
             {/* TIMELINE */}
 
             <Route
@@ -563,7 +804,6 @@ function App() {
                 <Timeline />
               }
             />
-
 
             {/* ANALYTICS */}
 
@@ -574,8 +814,7 @@ function App() {
               }
             />
 
-
-            {/* INVALID URL */}
+            {/* UNKNOWN ROUTE */}
 
             <Route
               path="*"
@@ -591,20 +830,135 @@ function App() {
 
         </main>
 
-
         {/* ====================================================
             PROJECT FOOTER
             ==================================================== */}
 
         <footer className="project-footer">
 
-          <span>
-            Project Leader:
-          </span>
+          <div className="railway-track">
 
-          <strong>
-            Abhishek Kumar
-          </strong>
+            <div className="moving-train">
+
+              {/* Coach 1 */}
+
+              <div className="train-coach">
+
+                <div className="coach-window"></div>
+
+                <div className="coach-name">
+                  Abhishek Sharma
+                </div>
+
+                <div className="coach-wheel wheel-left"></div>
+
+                <div className="coach-wheel wheel-right"></div>
+
+              </div>
+
+              <div className="train-connector"></div>
+
+              {/* Coach 2 */}
+
+              <div className="train-coach">
+
+                <div className="coach-window"></div>
+
+                <div className="coach-name">
+                  Rupesh Kushwaha
+                </div>
+
+                <div className="coach-wheel wheel-left"></div>
+
+                <div className="coach-wheel wheel-right"></div>
+
+              </div>
+
+              <div className="train-connector"></div>
+
+              {/* Coach 3 */}
+
+              <div className="train-coach">
+
+                <div className="coach-window"></div>
+
+                <div className="coach-name">
+                  Adarsh Mishra
+                </div>
+
+                <div className="coach-wheel wheel-left"></div>
+
+                <div className="coach-wheel wheel-right"></div>
+
+              </div>
+
+              <div className="train-connector"></div>
+
+              {/* Coach 4 */}
+
+              <div className="train-coach">
+
+                <div className="coach-window"></div>
+
+                <div className="coach-name">
+                  Shreya Singh
+                </div>
+
+                <div className="coach-wheel wheel-left"></div>
+
+                <div className="coach-wheel wheel-right"></div>
+
+              </div>
+
+              <div className="train-connector"></div>
+
+              {/* Coach 5 */}
+
+              <div className="train-coach">
+
+                <div className="coach-window"></div>
+
+                <div className="coach-name">
+                  Atul Shakya
+                </div>
+
+                <div className="coach-wheel wheel-left"></div>
+
+                <div className="coach-wheel wheel-right"></div>
+
+              </div>
+
+              <div className="train-connector"></div>
+
+              {/* ENGINE / TEAM LEADER */}
+
+              <div className="train-engine">
+
+                <div className="engine-top"></div>
+
+                <div className="engine-body">
+
+                  <div className="engine-front">
+                    🚆
+                  </div>
+
+                  <div className="engine-name">
+                    <strong>
+                      Abhishek Kumar
+                    </strong>
+                  </div>
+
+                </div>
+
+                <div className="train-wheel wheel-1"></div>
+
+                <div className="train-wheel wheel-2"></div>
+
+              </div>
+
+            </div>
+
+          </div>
 
         </footer>
 

@@ -610,257 +610,92 @@ function Home() {
         ? "Operational attention required"
         : "All monitored systems healthy";
 
-  /* =======================================================
-     LOADING SCREEN
-  ======================================================= */
+/* =======================================================
+   LOADING SCREEN
+======================================================= */
 
-  if (pageLoading) {
-    return (
-      <div
-        style={{
-          minHeight:
-            "calc(100vh - 76px)",
-          display:
-            "flex",
-          alignItems:
-            "center",
-          justifyContent:
-            "center",
-          background:
-            "linear-gradient(135deg, #eef6ff 0%, #f8fbff 50%, #edf5ff 100%)",
-          padding: "30px",
-        }}
-      >
+if (pageLoading) {
+  return (
+    <div className="home-loading-screen">
 
-        <div
-          style={{
-            width:
-              "min(560px, 92vw)",
-            background:
-              "rgba(255,255,255,0.96)",
-            border:
-              "1px solid #d8e7fa",
-            borderRadius:
-              "24px",
-            padding:
-              "42px 38px",
-            boxShadow:
-              "0 20px 60px rgba(29,78,137,0.12)",
-            textAlign:
-              "center",
-          }}
-        >
+      <div className="home-loading-card">
+
+        {/* ICON */}
+
+        <div className="home-loading-icon">
+          🚆
+        </div>
+
+        {/* BRAND */}
+
+        <div className="home-loading-brand">
+          RAILWAY OPERATIONS CONTROL
+        </div>
+
+        {/* TITLE */}
+
+        <h1>
+          Initializing Dashboard
+        </h1>
+
+        {/* DESCRIPTION */}
+
+        <p className="home-loading-description">
+          Loading railway operations,
+          maintenance and AI intelligence...
+        </p>
+
+        {/* PROGRESS */}
+
+        <div className="home-loading-progress-track">
 
           <div
+            className="home-loading-progress-fill"
             style={{
-              width: "76px",
-              height: "76px",
-              margin:
-                "0 auto 20px",
-              borderRadius:
-                "20px",
-              display:
-                "flex",
-              alignItems:
-                "center",
-              justifyContent:
-                "center",
-              background:
-                "linear-gradient(135deg, #0d6efd, #1d4ed8)",
-              color: "#fff",
-              fontSize:
-                "34px",
-              boxShadow:
-                "0 12px 30px rgba(13,110,253,0.25)",
+              width: `${loadProgress}%`,
             }}
-          >
-            🚆
+          />
+
+        </div>
+
+        <div className="home-loading-progress-info">
+
+          <span>
+            Securing data connections
+          </span>
+
+          <strong>
+            {loadProgress}%
+          </strong>
+
+        </div>
+
+        {/* SYSTEM MODULES */}
+
+        <div className="home-loading-modules">
+
+          <div className="home-loading-module">
+            <span>🚧</span>
+            <strong>Blocks</strong>
           </div>
 
-          <div
-            style={{
-              fontSize:
-                "12px",
-              fontWeight:
-                "800",
-              letterSpacing:
-                "2px",
-              color:
-                "#2563eb",
-              marginBottom:
-                "10px",
-            }}
-          >
-            RAILWAY OPERATIONS CONTROL
+          <div className="home-loading-module">
+            <span>🧠</span>
+            <strong>AI Engine</strong>
           </div>
 
-          <h1
-            style={{
-              margin:
-                "0 0 10px",
-              fontSize:
-                "30px",
-              color:
-                "#10213f",
-            }}
-          >
-            Initializing Dashboard
-          </h1>
-
-          <p
-            style={{
-              margin:
-                "0 0 28px",
-              color:
-                "#64748b",
-              fontSize:
-                "14px",
-            }}
-          >
-            Loading railway
-            operations,
-            maintenance and
-            AI intelligence...
-          </p>
-
-          <div
-            style={{
-              height:
-                "8px",
-              borderRadius:
-                "999px",
-              background:
-                "#e8f0fa",
-              overflow:
-                "hidden",
-              marginBottom:
-                "12px",
-            }}
-          >
-
-            <div
-              style={{
-                width:
-                  `${loadProgress}%`,
-                height:
-                  "100%",
-                borderRadius:
-                  "999px",
-                background:
-                  "linear-gradient(90deg, #2563eb, #60a5fa)",
-                transition:
-                  "width 180ms ease",
-              }}
-            />
-
-          </div>
-
-          <div
-            style={{
-              display:
-                "flex",
-              justifyContent:
-                "space-between",
-              fontSize:
-                "12px",
-              color:
-                "#64748b",
-            }}
-          >
-
-            <span>
-              Securing data
-              connections
-            </span>
-
-            <strong
-              style={{
-                color:
-                  "#2563eb",
-              }}
-            >
-              {loadProgress}%
-            </strong>
-
-          </div>
-
-          <div
-            style={{
-              display:
-                "grid",
-              gridTemplateColumns:
-                "repeat(3, 1fr)",
-              gap: "10px",
-              marginTop:
-                "28px",
-            }}
-          >
-
-            <div
-              style={{
-                padding:
-                  "12px 8px",
-                borderRadius:
-                  "12px",
-                background:
-                  "#f4f8ff",
-                fontSize:
-                  "11px",
-                color:
-                  "#475569",
-              }}
-            >
-              🚧
-              <br />
-              Blocks
-            </div>
-
-            <div
-              style={{
-                padding:
-                  "12px 8px",
-                borderRadius:
-                  "12px",
-                background:
-                  "#f4f8ff",
-                fontSize:
-                  "11px",
-                color:
-                  "#475569",
-              }}
-            >
-              🧠
-              <br />
-              AI Engine
-            </div>
-
-            <div
-              style={{
-                padding:
-                  "12px 8px",
-                borderRadius:
-                  "12px",
-                background:
-                  "#f4f8ff",
-                fontSize:
-                  "11px",
-                color:
-                  "#475569",
-              }}
-            >
-              🚆
-              <br />
-              Operations
-            </div>
-
+          <div className="home-loading-module">
+            <span>🚆</span>
+            <strong>Operations</strong>
           </div>
 
         </div>
 
       </div>
-    );
-  }
 
+    </div>
+  );
+}
   /* =======================================================
      DASHBOARD
   ======================================================= */

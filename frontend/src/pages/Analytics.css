@@ -1,232 +1,378 @@
-/* ============================================================
+/* =========================================================
    ADMIN ANALYTICS
-   ============================================================ */
+   RAILYojana AI — GLASS / RAILWAY THEME
+========================================================= */
 
 .analytics-page {
   display: flex;
   flex-direction: column;
   gap: 22px;
+
+  min-height: calc(100vh - 76px);
+
+  /* IMPORTANT:
+     global railway image should remain visible */
+  background: transparent !important;
 }
 
-
-/* ============================================================
+/* =========================================================
    HERO
-   ============================================================ */
+========================================================= */
 
 .analytics-hero {
   display: flex;
+
   justify-content: space-between;
   align-items: center;
 
   gap: 20px;
-  padding: 28px;
+
+  padding: 30px;
+
+  border:
+    1px solid
+    rgba(201, 219, 241, 0.90);
 
   border-radius: 18px;
 
   background:
     radial-gradient(
       circle at 90% 20%,
-      rgba(59, 130, 246, 0.18),
+      rgba(59, 130, 246, 0.14),
       transparent 30%
     ),
     linear-gradient(
       135deg,
-      #eff6ff,
-      #ffffff
+      rgba(239, 246, 255, 0.60),
+      rgba(255, 255, 255, 0.44)
     );
 
-  border: 1px solid #dbeafe;
-
   box-shadow:
-    0 8px 25px rgba(37, 99, 235, 0.07);
+    0 10px 30px
+    rgba(31, 78, 121, 0.07);
+
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 
 .analytics-eyebrow {
-  color: #2563eb;
+  color: #174bb8;
 
-  font-size: 11px;
-  font-weight: 800;
+  font-size: 13px;
+  font-weight: 850;
 
-  letter-spacing: 1px;
+  letter-spacing: 1.3px;
+
+  text-shadow:
+    0 1px 2px
+    rgba(255, 255, 255, 0.70);
 }
 
 .analytics-hero h1 {
-  margin: 8px 0;
+  margin: 9px 0;
 
-  color: #0f172a;
+  color: #081831;
 
-  font-size: 30px;
+  font-size: 38px;
+
+  line-height: 1.12;
+
+  font-weight: 850;
+
+  text-shadow:
+    0 1px 3px
+    rgba(255, 255, 255, 0.72);
 }
 
 .analytics-hero p {
   margin: 0;
 
-  max-width: 760px;
+  max-width: 780px;
 
-  color: #64748b;
+  color: #334b69;
 
-  font-size: 13px;
+  font-size: 15px;
 
-  line-height: 1.6;
+  line-height: 1.7;
+
+  text-shadow:
+    0 1px 2px
+    rgba(255, 255, 255, 0.60);
 }
 
 .analytics-live {
   display: flex;
+
   align-items: center;
 
   gap: 8px;
 
-  padding: 8px 12px;
+  padding:
+    10px
+    14px;
+
+  border:
+    1px solid
+    rgba(
+      187,
+      247,
+      208,
+      0.92
+    );
 
   border-radius: 999px;
 
-  background: #ffffff;
-
-  border: 1px solid #dcfce7;
+  background:
+    rgba(
+      255,
+      255,
+      255,
+      0.60
+    );
 
   color: #166534;
 
-  font-size: 11px;
-  font-weight: 800;
+  font-size: 12px;
+
+  font-weight: 850;
 
   white-space: nowrap;
+
+  backdrop-filter: blur(7px);
+  -webkit-backdrop-filter: blur(7px);
 }
 
 .analytics-live .status-dot {
-  width: 8px;
-  height: 8px;
+  width: 9px;
+  height: 9px;
 
   border-radius: 50%;
 
   background: #22c55e;
+
+  box-shadow:
+    0 0 0 4px
+    rgba(
+      34,
+      197,
+      94,
+      0.10
+    );
+
+  animation:
+    analyticsPulse
+    1.8s
+    infinite;
 }
 
+@keyframes analyticsPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
 
-/* ============================================================
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* =========================================================
    KPI
-   ============================================================ */
+========================================================= */
 
 .analytics-kpi-grid {
   display: grid;
 
   grid-template-columns:
-    repeat(4, 1fr);
+    repeat(
+      4,
+      minmax(0, 1fr)
+    );
 
   gap: 14px;
 }
 
 .analytics-kpi-card {
-  padding: 18px;
+  padding: 20px;
 
-  border-radius: 14px;
+  border-radius: 15px;
 
-  background: #ffffff;
+  background:
+    linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.58),
+      rgba(246, 250, 255, 0.45)
+    );
 
-  border: 1px solid #dbeafe;
+  border:
+    1px solid
+    rgba(
+      204,
+      222,
+      243,
+      0.90
+    );
 
   box-shadow:
-    0 8px 24px rgba(15, 23, 42, 0.05);
+    0 9px 25px
+    rgba(
+      15,
+      23,
+      42,
+      0.05
+    );
+
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 
   transition:
     transform 0.2s ease,
-    box-shadow 0.2s ease;
+    box-shadow 0.2s ease,
+    border-color 0.2s ease;
 }
 
 .analytics-kpi-card:hover {
-  transform: translateY(-3px);
+  transform:
+    translateY(-3px);
+
+  border-color:
+    #a9c6e8;
 
   box-shadow:
-    0 12px 28px rgba(37, 99, 235, 0.10);
+    0 14px 30px
+    rgba(
+      37,
+      99,
+      235,
+      0.09
+    );
 }
 
 .analytics-kpi-card span {
   display: block;
 
-  margin-bottom: 8px;
+  margin-bottom: 9px;
 
-  color: #64748b;
+  color: #2e4663;
 
   font-size: 12px;
-  font-weight: 700;
+
+  font-weight: 800;
 }
 
 .analytics-kpi-card strong {
-  color: #1d4ed8;
+  color: #123f9f;
 
-  font-size: 28px;
+  font-size: 32px;
+
+  line-height: 1;
+
+  font-weight: 850;
 }
 
-
-/* ============================================================
+/* =========================================================
    TWO COLUMN
-   ============================================================ */
+========================================================= */
 
 .analytics-two-column {
   display: grid;
 
   grid-template-columns:
-    repeat(2, minmax(0, 1fr));
+    repeat(
+      2,
+      minmax(0, 1fr)
+    );
 
   gap: 18px;
 }
 
-
-/* ============================================================
-   CARD
-   ============================================================ */
+/* =========================================================
+   COMMON CARD
+========================================================= */
 
 .analytics-card {
-  padding: 22px;
+  padding: 23px;
 
   border-radius: 16px;
 
-  background: #ffffff;
+  background:
+    rgba(
+      255,
+      255,
+      255,
+      0.56
+    );
 
-  border: 1px solid #dbeafe;
+  border:
+    1px solid
+    rgba(
+      204,
+      222,
+      243,
+      0.90
+    );
 
   box-shadow:
-    0 8px 24px rgba(15, 23, 42, 0.05);
+    0 10px 30px
+    rgba(
+      15,
+      23,
+      42,
+      0.05
+    );
+
+  backdrop-filter: blur(9px);
+  -webkit-backdrop-filter: blur(9px);
 }
 
 .analytics-ai-card {
   background:
     linear-gradient(
       145deg,
-      #ffffff,
-      #f8fbff
+      rgba(255, 255, 255, 0.60),
+      rgba(248, 251, 255, 0.46)
     );
 }
 
 .analytics-card-header {
-  margin-bottom: 18px;
+  margin-bottom: 19px;
 }
 
 .analytics-card-header h2 {
   margin: 0;
 
-  color: #0f172a;
+  color: #091931;
 
-  font-size: 19px;
+  font-size: 22px;
+
+  font-weight: 850;
 }
 
 .analytics-card-header p {
-  margin: 5px 0 0;
+  margin:
+    6px
+    0
+    0;
 
-  color: #64748b;
+  color: #425a77;
 
   font-size: 12px;
+
+  line-height: 1.55;
 }
 
-
-/* ============================================================
+/* =========================================================
    MINI GRID
-   ============================================================ */
+========================================================= */
 
 .analytics-mini-grid {
   display: grid;
 
   grid-template-columns:
-    repeat(3, 1fr);
+    repeat(
+      3,
+      minmax(0, 1fr)
+    );
 
   gap: 10px;
 }
@@ -235,11 +381,27 @@
 .analytics-performance-grid div {
   padding: 13px;
 
-  border-radius: 9px;
+  border-radius: 10px;
 
-  background: #eff6ff;
+  background:
+    rgba(
+      239,
+      246,
+      255,
+      0.52
+    );
 
-  border: 1px solid #dbeafe;
+  border:
+    1px solid
+    rgba(
+      207,
+      225,
+      244,
+      0.90
+    );
+
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
 }
 
 .analytics-mini-grid span,
@@ -248,65 +410,100 @@
 
   margin-bottom: 5px;
 
-  color: #64748b;
+  color: #526983;
 
   font-size: 11px;
+
+  font-weight: 700;
 }
 
 .analytics-mini-grid strong,
 .analytics-performance-grid strong {
-  color: #1e3a8a;
+  color: #123f9f;
 
-  font-size: 19px;
+  font-size: 20px;
+
+  font-weight: 850;
 }
 
-
-/* ============================================================
+/* =========================================================
    PERFORMANCE
-   ============================================================ */
+========================================================= */
 
 .analytics-performance-grid {
   display: grid;
 
   grid-template-columns:
-    repeat(3, 1fr);
+    repeat(
+      3,
+      minmax(0, 1fr)
+    );
 
   gap: 10px;
 }
 
-
-/* ============================================================
+/* =========================================================
    CHARTS
-   ============================================================ */
+========================================================= */
 
 .analytics-chart-grid {
   display: grid;
 
   grid-template-columns:
-    repeat(2, minmax(0, 1fr));
+    repeat(
+      2,
+      minmax(0, 1fr)
+    );
 
   gap: 18px;
 }
 
 .analytics-chart-card {
-  padding: 18px;
+  padding: 19px;
 
   border-radius: 14px;
 
-  background: #ffffff;
+  background:
+    rgba(
+      255,
+      255,
+      255,
+      0.52
+    );
 
-  border: 1px solid #dbeafe;
+  border:
+    1px solid
+    rgba(
+      204,
+      222,
+      243,
+      0.90
+    );
 
   box-shadow:
-    0 8px 24px rgba(15, 23, 42, 0.05);
+    0 9px 25px
+    rgba(
+      15,
+      23,
+      42,
+      0.05
+    );
+
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
 .analytics-chart-card h3 {
-  margin: 0 0 12px;
+  margin:
+    0
+    0
+    13px;
 
-  color: #0f172a;
+  color: #091931;
 
-  font-size: 14px;
+  font-size: 15px;
+
+  font-weight: 850;
 }
 
 .analytics-chart {
@@ -314,10 +511,9 @@
   height: 280px;
 }
 
-
-/* ============================================================
+/* =========================================================
    INSIGHT
-   ============================================================ */
+========================================================= */
 
 .analytics-insight {
   display: flex;
@@ -326,26 +522,42 @@
 
   gap: 14px;
 
-  padding: 18px;
+  padding: 19px;
 
   border-radius: 14px;
 
   background:
     linear-gradient(
       135deg,
-      #eff6ff,
-      #ffffff
+      rgba(239, 246, 255, 0.58),
+      rgba(255, 255, 255, 0.42)
     );
 
-  border: 1px solid #bfdbfe;
+  border:
+    1px solid
+    rgba(
+      191,
+      219,
+      254,
+      0.92
+    );
 
   box-shadow:
-    0 8px 24px rgba(37, 99, 235, 0.06);
+    0 9px 25px
+    rgba(
+      37,
+      99,
+      235,
+      0.06
+    );
+
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
 .analytics-insight-icon {
-  width: 42px;
-  height: 42px;
+  width: 44px;
+  height: 44px;
 
   display: flex;
 
@@ -356,33 +568,55 @@
 
   border-radius: 11px;
 
-  background: #dbeafe;
+  background:
+    rgba(
+      219,
+      234,
+      254,
+      0.72
+    );
+
+  border:
+    1px solid
+    rgba(
+      191,
+      219,
+      254,
+      0.80
+    );
 
   font-size: 20px;
+
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
 }
 
 .analytics-insight h3 {
-  margin: 0 0 5px;
+  margin:
+    0
+    0
+    5px;
 
-  color: #0f172a;
+  color: #0b203d;
 
-  font-size: 14px;
+  font-size: 15px;
+
+  font-weight: 850;
 }
 
 .analytics-insight p {
   margin: 0;
 
-  color: #475569;
+  color: #405775;
 
   font-size: 12px;
 
-  line-height: 1.5;
+  line-height: 1.6;
 }
 
-
-/* ============================================================
+/* =========================================================
    LOADING
-   ============================================================ */
+========================================================= */
 
 .analytics-loading-panel {
   min-height: 300px;
@@ -392,49 +626,76 @@
   flex-direction: column;
 
   justify-content: center;
+
   align-items: center;
 
   gap: 10px;
 
   border-radius: 16px;
 
-  background: #ffffff;
+  background:
+    rgba(
+      255,
+      255,
+      255,
+      0.54
+    );
 
-  border: 1px solid #dbeafe;
+  border:
+    1px solid
+    rgba(
+      204,
+      222,
+      243,
+      0.90
+    );
 
-  color: #64748b;
+  color: #526983;
 
   font-size: 13px;
+
+  backdrop-filter: blur(9px);
+  -webkit-backdrop-filter: blur(9px);
 }
 
 .analytics-loading-panel .loader {
   width: 32px;
   height: 32px;
 
-  border: 3px solid #dbeafe;
+  border:
+    3px solid
+    #dbeafe;
 
-  border-top-color: #2563eb;
+  border-top-color:
+    #2563eb;
 
   border-radius: 50%;
 
-  animation: analyticsSpin 0.8s linear infinite;
+  animation:
+    analyticsSpin
+    0.8s
+    linear
+    infinite;
 }
 
 @keyframes analyticsSpin {
   to {
-    transform: rotate(360deg);
+    transform:
+      rotate(360deg);
   }
 }
 
-
-/* ============================================================
+/* =========================================================
    RESPONSIVE
-   ============================================================ */
+========================================================= */
 
 @media (max-width: 1100px) {
   .analytics-kpi-grid {
     grid-template-columns:
-      repeat(2, 1fr);
+      repeat(
+        2,
+        minmax(0, 1fr)
+      );
   }
 
   .analytics-chart-grid {
@@ -449,7 +710,10 @@
 
   .analytics-performance-grid {
     grid-template-columns:
-      repeat(2, 1fr);
+      repeat(
+        2,
+        minmax(0, 1fr)
+      );
   }
 }
 
@@ -463,7 +727,7 @@
   }
 
   .analytics-hero h1 {
-    font-size: 25px;
+    font-size: 29px;
   }
 
   .analytics-kpi-grid {
@@ -472,7 +736,10 @@
 
   .analytics-mini-grid {
     grid-template-columns:
-      repeat(2, 1fr);
+      repeat(
+        2,
+        minmax(0, 1fr)
+      );
   }
 }
 
@@ -489,5 +756,9 @@
 
   .analytics-insight {
     flex-direction: column;
+  }
+
+  .analytics-live {
+    align-self: flex-start;
   }
 }

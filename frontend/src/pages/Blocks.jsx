@@ -580,31 +580,22 @@ function Blocks() {
   ======================================================= */
 
   const filteredBlocks = useMemo(() => {
-    if (blockFilter === "ALL") {
-      return blocks;
-    }
+  if (blockFilter === "ALL") {
+    return blocks;
+  }
 
-    if (
-      blockFilter ===
-      "REPLAN_REQUIRED"
-    ) {
-      return blocks.filter(
-        (block) =>
-          block.replan_required ===
-          true
-      );
-    }
-
+  if (blockFilter === "REPLAN_REQUIRED") {
     return blocks.filter(
       (block) =>
-        block.status ===
-        blockFilter
+        block.replan_required === true
     );
-  }, [
-    blocks,
-    blockFilter,
-  ]);
+  }
 
+  return blocks.filter(
+    (block) =>
+      block.status === blockFilter
+  );
+}, [blocks, blockFilter]);
   /* =======================================================
      COUNTS
   ======================================================= */

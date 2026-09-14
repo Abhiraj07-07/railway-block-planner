@@ -16,7 +16,7 @@ import "./Analytics.css";
 
 const API_BASE =
   import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000";
-const TOKEN_KEY = "railway_admin_token";
+const TOKEN_KEY = "railway_token";
 
 const authFetch = (url, options = {}) => {
   const token = localStorage.getItem(TOKEN_KEY);

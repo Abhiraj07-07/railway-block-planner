@@ -1124,17 +1124,18 @@ def create_maintenance_block(
     )
 
     block = Block(
-        block_code=block_code,
-        section_id=section_id,
-        block_date=block_date,
-        start_time=parsed_start_time,
-        end_time=parsed_end_time,
-        reason=(
-            "Automatic maintenance block for "
-            f"{len(tasks)} task(s)"
-        ),
-        status="PLANNED",
-    )
+    block_code=block_code,
+    section_id=section_id,
+    block_date=block_date,
+    start_time=parsed_start_time,
+    end_time=parsed_end_time,
+    reason=(
+        "Automatic maintenance block for "
+        f"{len(tasks)} task(s)"
+    ),
+    status="PLANNED",
+    created_by=current_user.username,
+)
 
     db.add(block)
     db.flush()
@@ -1228,6 +1229,7 @@ def create_maintenance_block(
             "end_time": block.end_time,
             "reason": block.reason,
             "status": block.status,
+            "created_by": block.created_by,
             "task_ids": unique_task_ids,
             "conflict_count": impact.get(
                 "conflict_count",
@@ -1439,6 +1441,7 @@ def get_maintenance_blocks(
                     block.reason,
                 "status":
                     block.status,
+                "created_by": block.created_by,    
                 "replan_required":
                     block.replan_required,
                 "recommended_start_time":
@@ -3771,6 +3774,8 @@ def apply_task_level_replan(
             recommended_start_time=None,
 
             recommended_end_time=None,
+            
+            created_by=current_user.username,
         )
 
         db.add(new_block)

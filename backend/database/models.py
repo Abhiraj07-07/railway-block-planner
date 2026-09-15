@@ -25,8 +25,17 @@ class Department(Base):
     __tablename__ = "departments"
 
     department_id = Column(Integer, primary_key=True, index=True)
-    department_code = Column(String(20), unique=True, nullable=False)
-    department_name = Column(String(100), nullable=False)
+
+    department_code = Column(
+        String(20),
+        unique=True,
+        nullable=False
+    )
+
+    department_name = Column(
+        String(100),
+        nullable=False
+    )
 
     assets = relationship(
         "Asset",
@@ -46,9 +55,22 @@ class Department(Base):
 class Station(Base):
     __tablename__ = "stations"
 
-    station_id = Column(Integer, primary_key=True, index=True)
-    station_code = Column(String(20), unique=True, nullable=False)
-    station_name = Column(String(100), nullable=False)
+    station_id = Column(
+        Integer,
+        primary_key=True,
+        index=True
+    )
+
+    station_code = Column(
+        String(20),
+        unique=True,
+        nullable=False
+    )
+
+    station_name = Column(
+        String(100),
+        nullable=False
+    )
 
     from_sections = relationship(
         "Section",
@@ -70,7 +92,11 @@ class Station(Base):
 class Section(Base):
     __tablename__ = "sections"
 
-    section_id = Column(Integer, primary_key=True, index=True)
+    section_id = Column(
+        Integer,
+        primary_key=True,
+        index=True
+    )
 
     section_code = Column(
         String(30),
@@ -551,7 +577,7 @@ class Block(Base):
         nullable=False,
         default="PLANNED"
     )
-    
+
     replan_required = Column(
         Boolean,
         nullable=False,
@@ -565,6 +591,15 @@ class Block(Base):
 
     recommended_end_time = Column(
         Time,
+        nullable=True
+    )
+
+    # --------------------------------------------------------
+    # USER WHO CREATED THE BLOCK
+    # --------------------------------------------------------
+
+    created_by = Column(
+        String(50),
         nullable=True
     )
 
@@ -614,7 +649,8 @@ class BlockTask(Base):
         "MaintenanceTask",
         back_populates="block_tasks"
     )
-    
+
+
 # ============================================================
 # 12. OPERATIONAL EVENTS
 # ============================================================
@@ -693,8 +729,9 @@ class OperationalEvent(Base):
 
     train = relationship(
         "Train"
-    )    
-    
+    )
+
+
 # ============================================================
 # 13. USERS / ADMIN AUTHENTICATION
 # ============================================================

@@ -766,6 +766,13 @@ function Blocks() {
     );
   };
 
+  const filteredTasks = tasks.filter(
+  (task) =>
+    !newBlock.section_id ||
+    String(task.section_id) ===
+      String(newBlock.section_id)
+);
+
   /* =======================================================
      MANUAL BLOCK VALIDATION
   ======================================================= */
@@ -2200,19 +2207,15 @@ const response =
 </label>
 
               <select
-                value={
-                  newBlock.section_id
-                }
-                onChange={(event) =>
-                  setNewBlock(
-                    (previous) => ({
-                      ...previous,
-                      section_id:
-                        event.target.value,
-                    })
-                  )
-                }
-              >
+  value={newBlock.section_id}
+  onChange={(event) =>
+    setNewBlock((previous) => ({
+      ...previous,
+      section_id: event.target.value,
+      task_ids: [],
+    }))
+  }
+>
 
                 <option value="">
                   Select Section
@@ -2315,138 +2318,119 @@ const response =
 
           {/* TASK SELECTION */}
 
-          <div className="form-group block-task-group">
+         <div className="form-group block-task-group">
 
-            <label>
-              Maintenance Tasks
-            </label>
+  <label>
+    Maintenance Tasks
+  </label>
 
-            <div className="block-task-list">
+  <div className="block-task-list">
 
-              {tasks.length === 0 ? (
+    {!newBlock.section_id ? (
 
-                <p className="empty-state">
-                  No maintenance tasks
-                  available.
-                </p>
+      <p className="empty-state">
+        Please select a section first.
+      </p>
 
-              ) : (
+    ) : filteredTasks.length === 0 ? (
 
-                tasks.map((task) => {
+      <p className="empty-state">
+        No maintenance tasks available
+        for this section.
+      </p>
 
-                  const decision =
-                    decisionMap[
-                      task.task_id
-                    ];
+    ) : (
 
-                  const selected =
-                    newBlock.task_ids.includes(
-                      task.task_id
-                    );
+      filteredTasks.map((task) => {
 
-                  const status =
-                    String(
-                      task.status || ""
-                    ).toUpperCase();
+        const decision =
+          decisionMap[task.task_id];
 
-                  const disabled =
-                    status ===
-                      "COMPLETED" ||
-                    status ===
-                      "CANCELLED";
+        const selected =
+          newBlock.task_ids.includes(
+            task.task_id
+          );
 
-                  return (
-                    <label
-                      className="block-task-item"
-                      key={
-                        task.task_id
-                      }
-                      style={
-                        selected
-                          ? {
-                              borderColor:
-                                "#2563eb",
-                              background:
-                                "#eff6ff",
-                            }
-                          : undefined
-                      }
-                    >
+        const status =
+          String(
+            task.status || ""
+          ).toUpperCase();
 
-                      <input
-                        type="checkbox"
-                        checked={
-                          selected
-                        }
-                        disabled={
-                          disabled
-                        }
-                        onChange={() =>
-                          toggleTask(
-                            task.task_id
-                          )
-                        }
-                      />
+        const disabled =
+          status === "COMPLETED" ||
+          status === "CANCELLED";
 
-                      <span>
+        return (
+          <label
+            className="block-task-item"
+            key={task.task_id}
+            style={
+              selected
+                ? {
+                    borderColor: "#2563eb",
+                    background: "#eff6ff",
+                  }
+                : undefined
+            }
+          >
 
-                        <strong>
-                          {
-                            task.task_code
-                          }
-                        </strong>
+            <input
+              type="checkbox"
+              checked={selected}
+              disabled={disabled}
+              onChange={() =>
+                toggleTask(task.task_id)
+              }
+            />
 
-                        {" · "}
+            <span>
 
-                        {
-                          task.task_type
-                        }
+              <strong>
+                {task.task_code}
+              </strong>
 
-                        {" · "}
+              {" · "}
 
-                        {
-                          task.severity
-                        }
+              {task.task_type}
 
-                        {" · "}
+              {" · "}
 
-                        <small>
-                          {status ||
-                            "UNKNOWN"}
-                        </small>
+              {task.severity}
 
-                        {decision ? (
+              {" · "}
 
-                          <small className="task-ai-inline">
-                            {" · "}AI{" "}
-                            {
-                              decision.decision_level
-                            }
-                            {" · "}ML{" "}
-                            {
-                              decision.ml_risk_percentage
-                            }%
-                          </small>
+              <small>
+                {status || "UNKNOWN"}
+              </small>
 
-                        ) : aiLoading ? (
+              {decision ? (
 
-                          <small className="task-ai-inline">
-                            {" · "}AI loading...
-                          </small>
+                <small className="task-ai-inline">
+                  {" · "}AI{" "}
+                  {decision.decision_level}
+                  {" · "}ML{" "}
+                  {decision.ml_risk_percentage}%
+                </small>
 
-                        ) : null}
+              ) : aiLoading ? (
 
-                      </span>
+                <small className="task-ai-inline">
+                  {" · "}AI loading...
+                </small>
 
-                    </label>
-                  );
-                })
+              ) : null}
 
-              )}
+            </span>
 
-            </div>
+          </label>
+        );
+      })
 
-          </div>
+    )}
+
+  </div>
+
+</div>
 
           <div
             style={{

@@ -74,7 +74,7 @@ export async function authFetch(url, options = {}) {
   };
 
   // ----------------------------------------------------------
-  // JSON BODY HANDLING
+  // BODY TYPE DETECTION
   // ----------------------------------------------------------
 
   const hasContentType =
@@ -89,14 +89,15 @@ export async function authFetch(url, options = {}) {
     typeof URLSearchParams !== "undefined" &&
     options.body instanceof URLSearchParams;
 
+  // Add JSON content type automatically
+  // when body is a normal JavaScript object/string.
   if (
     options.body &&
     !hasContentType &&
     !isFormData &&
     !isUrlSearchParams
   ) {
-    headers["Content-Type"] =
-      "application/json";
+    headers["Content-Type"] = "application/json";
   }
 
   // ----------------------------------------------------------
@@ -104,8 +105,7 @@ export async function authFetch(url, options = {}) {
   // ----------------------------------------------------------
 
   if (token) {
-    headers.Authorization =
-      `Bearer ${token}`;
+    headers.Authorization = `Bearer ${token}`;
   }
 
   try {
@@ -119,26 +119,20 @@ export async function authFetch(url, options = {}) {
     });
 
     // --------------------------------------------------------
-    // RESPONSE TYPE
+    // RESPONSE PARSING
     // --------------------------------------------------------
 
     const contentType =
-      response.headers.get(
-        "content-type"
-      ) || "";
+      response.headers.get("content-type") || "";
 
     let data = null;
 
     if (
-      contentType.includes(
-        "application/json"
-      )
+      contentType.includes("application/json")
     ) {
-      data =
-        await response.json();
+      data = await response.json();
     } else {
-      data =
-        await response.text();
+      data = await response.text();
     }
 
     // --------------------------------------------------------
@@ -149,35 +143,22 @@ export async function authFetch(url, options = {}) {
       let message =
         `Request failed (${response.status})`;
 
-      if (
-        typeof data === "string"
-      ) {
+      if (typeof data === "string") {
         if (data.trim()) {
           message = data;
         }
-      } else if (
-        data?.detail
-      ) {
+      } else if (data?.detail) {
         message =
-          typeof data.detail ===
-          "string"
+          typeof data.detail === "string"
             ? data.detail
-            : JSON.stringify(
-                data.detail
-              );
-      } else if (
-        data?.message
-      ) {
+            : JSON.stringify(data.detail);
+      } else if (data?.message) {
         message =
-          typeof data.message ===
-          "string"
+          typeof data.message === "string"
             ? data.message
-            : JSON.stringify(
-                data.message
-              );
+            : JSON.stringify(data.message);
       } else if (data) {
-        message =
-          JSON.stringify(data);
+        message = JSON.stringify(data);
       }
 
       // ------------------------------------------------------
@@ -188,13 +169,8 @@ export async function authFetch(url, options = {}) {
         response.status === 401 ||
         response.status === 403
       ) {
-        localStorage.removeItem(
-          TOKEN_KEY
-        );
-
-        localStorage.removeItem(
-          USER_KEY
-        );
+        localStorage.removeItem(TOKEN_KEY);
+        localStorage.removeItem(USER_KEY);
       }
 
       throw new Error(message);
@@ -205,9 +181,7 @@ export async function authFetch(url, options = {}) {
     // --------------------------------------------------------
 
     return data;
-
   } finally {
-
     // --------------------------------------------------------
     // MINIMUM LOADER TIME
     // --------------------------------------------------------
@@ -215,22 +189,18 @@ export async function authFetch(url, options = {}) {
     const MIN_LOADER_TIME = 800;
 
     const elapsed =
-      Date.now() -
-      loaderStartTime;
+      Date.now() - loaderStartTime;
 
     const remaining =
       Math.max(
         0,
-        MIN_LOADER_TIME -
-          elapsed
+        MIN_LOADER_TIME - elapsed
       );
 
     if (!skipGlobalLoader) {
       setTimeout(() => {
         window.dispatchEvent(
-          new Event(
-            "railway-loading-end"
-          )
+          new Event("railway-loading-end")
         );
       }, remaining);
     }
@@ -242,7 +212,6 @@ export async function authFetch(url, options = {}) {
 // ============================================================
 
 function App() {
-
   // ==========================================================
   // CURRENT USER
   // ==========================================================
@@ -251,26 +220,26 @@ function App() {
     useState(() => {
       try {
         const savedUser =
-          localStorage.getItem(
-            USER_KEY
-          );
+          localStorage.getItem(USER_KEY);
 
         if (!savedUser) {
           return null;
         }
 
-        return JSON.parse(
-          savedUser
-        );
-
+        return JSON.parse(savedUser);
       } catch {
-        localStorage.removeItem(
-          USER_KEY
-        );
-
+        localStorage.removeItem(USER_KEY);
         return null;
       }
     });
+
+  // ==========================================================
+  // AUTH MODE
+  // login | register
+  // ==========================================================
+
+  const [authMode, setAuthMode] =
+    useState("login");
 
   // ==========================================================
   // LOGIN FORM STATE
@@ -289,11 +258,75 @@ function App() {
     useState("");
 
   // ==========================================================
+  // REGISTER FORM STATE
+  // ==========================================================
+
+  const [registerUsername, setRegisterUsername] =
+    useState("");
+
+  const [registerPassword, setRegisterPassword] =
+    useState("");
+
+  const [confirmPassword, setConfirmPassword] =
+    useState("");
+
+  const [registerLoading, setRegisterLoading] =
+    useState(false);
+
+  const [registerError, setRegisterError] =
+    useState("");
+
+  const [registerSuccess, setRegisterSuccess] =
+    useState("");
+
+  // ==========================================================
+  // SWITCH TO REGISTER
+  // ==========================================================
+
+  const showRegister = () => {
+    setAuthMode("register");
+
+    setLoginError("");
+    setRegisterError("");
+    setRegisterSuccess("");
+
+    if (username.trim()) {
+      setRegisterUsername(
+        username.trim()
+      );
+    }
+
+    setPassword("");
+  };
+
+  // ==========================================================
+  // SWITCH TO LOGIN
+  // ==========================================================
+
+  const showLogin = () => {
+    setAuthMode("login");
+
+    setLoginError("");
+    setRegisterError("");
+    setRegisterSuccess("");
+
+    setRegisterPassword("");
+    setConfirmPassword("");
+
+    // Automatically put registered username
+    // into login field.
+    if (registerUsername.trim()) {
+      setUsername(
+        registerUsername.trim()
+      );
+    }
+  };
+
+  // ==========================================================
   // LOGIN
   // ==========================================================
 
   const handleLogin = async (event) => {
-
     event.preventDefault();
 
     setLoginError("");
@@ -319,9 +352,7 @@ function App() {
     setLoginLoading(true);
 
     try {
-
       // ------------------------------------------------------
-      // BACKEND LOGIN
       // POST /auth/login
       // ------------------------------------------------------
 
@@ -385,44 +416,34 @@ function App() {
       // ------------------------------------------------------
 
       if (!response.ok) {
-
         let message =
           "Login failed.";
 
         if (
           typeof data === "string"
         ) {
-
           if (data.trim()) {
             message = data;
           }
-
         } else if (
           data?.detail
         ) {
-
           message =
-            typeof data.detail ===
-            "string"
+            typeof data.detail === "string"
               ? data.detail
               : JSON.stringify(
                   data.detail
                 );
-
         } else if (
           data?.message
         ) {
-
           message =
-            typeof data.message ===
-            "string"
+            typeof data.message === "string"
               ? data.message
               : JSON.stringify(
                   data.message
                 );
-
         } else if (data) {
-
           message =
             JSON.stringify(data);
         }
@@ -479,8 +500,7 @@ function App() {
       );
 
       // ------------------------------------------------------
-      // IMPORTANT:
-      // ALWAYS START FROM HOME AFTER LOGIN
+      // ALWAYS START FROM HOME
       // ------------------------------------------------------
 
       window.history.replaceState(
@@ -490,19 +510,18 @@ function App() {
       );
 
       // ------------------------------------------------------
-      // UPDATE APP STATE
+      // UPDATE STATE
       // ------------------------------------------------------
 
       setCurrentUser(user);
 
       setUsername("");
-
       setPassword("");
 
       setLoginError("");
 
+      setAuthMode("login");
     } catch (error) {
-
       console.error(
         "Login error:",
         error
@@ -512,10 +531,212 @@ function App() {
         error?.message ||
         "Unable to login. Please try again."
       );
-
     } finally {
-
       setLoginLoading(false);
+    }
+  };
+
+  // ==========================================================
+  // REGISTER
+  // ==========================================================
+
+  const handleRegister = async (event) => {
+    event.preventDefault();
+
+    setRegisterError("");
+    setRegisterSuccess("");
+
+    const cleanUsername =
+      registerUsername.trim();
+
+    // --------------------------------------------------------
+    // VALIDATE USERNAME
+    // --------------------------------------------------------
+
+    if (!cleanUsername) {
+      setRegisterError(
+        "Please enter a username."
+      );
+
+      return;
+    }
+
+    if (cleanUsername.length < 3) {
+      setRegisterError(
+        "Username must be at least 3 characters long."
+      );
+
+      return;
+    }
+
+    // --------------------------------------------------------
+    // VALIDATE PASSWORD
+    // --------------------------------------------------------
+
+    if (!registerPassword) {
+      setRegisterError(
+        "Please enter a password."
+      );
+
+      return;
+    }
+
+    if (registerPassword.length < 4) {
+      setRegisterError(
+        "Password must be at least 4 characters long."
+      );
+
+      return;
+    }
+
+    // --------------------------------------------------------
+    // CONFIRM PASSWORD
+    // --------------------------------------------------------
+
+    if (
+      registerPassword !==
+      confirmPassword
+    ) {
+      setRegisterError(
+        "Passwords do not match."
+      );
+
+      return;
+    }
+
+    setRegisterLoading(true);
+
+    try {
+      // ------------------------------------------------------
+      // POST /auth/register
+      // ------------------------------------------------------
+
+      const response =
+        await fetch(
+          `${API_BASE}/auth/register`,
+          {
+            method: "POST",
+
+            headers: {
+              "Content-Type":
+                "application/json",
+
+              Accept:
+                "application/json",
+            },
+
+            body: JSON.stringify({
+              username:
+                cleanUsername,
+
+              password:
+                registerPassword,
+            }),
+          }
+        );
+
+      // ------------------------------------------------------
+      // PARSE RESPONSE
+      // ------------------------------------------------------
+
+      const contentType =
+        response.headers.get(
+          "content-type"
+        ) || "";
+
+      let data = null;
+
+      if (
+        contentType.includes(
+          "application/json"
+        )
+      ) {
+        data =
+          await response.json();
+      } else {
+        data =
+          await response.text();
+      }
+
+      // ------------------------------------------------------
+      // REGISTRATION ERROR
+      // ------------------------------------------------------
+
+      if (!response.ok) {
+        let message =
+          "Registration failed.";
+
+        if (
+          typeof data === "string"
+        ) {
+          if (data.trim()) {
+            message = data;
+          }
+        } else if (
+          data?.detail
+        ) {
+          message =
+            typeof data.detail === "string"
+              ? data.detail
+              : JSON.stringify(
+                  data.detail
+                );
+        } else if (
+          data?.message
+        ) {
+          message =
+            typeof data.message === "string"
+              ? data.message
+              : JSON.stringify(
+                  data.message
+                );
+        } else if (data) {
+          message =
+            JSON.stringify(data);
+        }
+
+        throw new Error(message);
+      }
+
+      // ------------------------------------------------------
+      // SUCCESS
+      // ------------------------------------------------------
+
+      setRegisterSuccess(
+        data?.message ||
+        "Account created successfully."
+      );
+
+      // Put registered username
+      // into login field.
+      setUsername(
+        cleanUsername
+      );
+
+      // Clear registration password fields.
+      setRegisterPassword("");
+      setConfirmPassword("");
+
+      // ------------------------------------------------------
+      // RETURN TO LOGIN
+      // ------------------------------------------------------
+
+      setTimeout(() => {
+        setAuthMode("login");
+        setRegisterSuccess("");
+      }, 1200);
+    } catch (error) {
+      console.error(
+        "Registration error:",
+        error
+      );
+
+      setRegisterError(
+        error?.message ||
+        "Unable to register. Please try again."
+      );
+    } finally {
+      setRegisterLoading(false);
     }
   };
 
@@ -524,7 +745,6 @@ function App() {
   // ==========================================================
 
   const handleLogout = () => {
-
     // --------------------------------------------------------
     // REMOVE AUTH DATA
     // --------------------------------------------------------
@@ -544,17 +764,21 @@ function App() {
     setCurrentUser(null);
 
     setUsername("");
-
     setPassword("");
 
     setLoginError("");
 
+    setRegisterUsername("");
+    setRegisterPassword("");
+    setConfirmPassword("");
+
+    setRegisterError("");
+    setRegisterSuccess("");
+
+    setAuthMode("login");
+
     // --------------------------------------------------------
-    // IMPORTANT:
-    // RESET ROUTE TO HOME
-    //
-    // So after logout/login cycle,
-    // user never remains on old page.
+    // RESET ROUTE
     // --------------------------------------------------------
 
     window.history.replaceState(
@@ -565,18 +789,18 @@ function App() {
   };
 
   // ==========================================================
-  // LOGIN SCREEN
+  // AUTH SCREEN
   // ==========================================================
 
   if (!currentUser) {
-
     return (
-
       <div className="login-page">
 
         <div className="login-card">
 
-          {/* LOGIN BRAND */}
+          {/* ==================================================
+              BRAND
+          ================================================== */}
 
           <div className="login-brand">
 
@@ -594,116 +818,317 @@ function App() {
 
           </div>
 
-          {/* TITLE */}
+          {/* ==================================================
+              LOGIN SCREEN
+          ================================================== */}
 
-          <h1>
-            RailYojana AI
-          </h1>
+          {authMode === "login" && (
+            <>
+              <h1>
+                RailYojana AI
+              </h1>
 
-          <p className="login-subtitle">
-            Admin Control Panel
-          </p>
+              <p className="login-subtitle">
+                Admin Control Panel
+              </p>
 
-          {/* LOGIN ERROR */}
+              {loginError && (
+                <div className="login-error">
+                  {loginError}
+                </div>
+              )}
 
-          {loginError && (
-            <div className="login-error">
-              {loginError}
-            </div>
+              <form
+                onSubmit={
+                  handleLogin
+                }
+                className="login-form"
+              >
+
+                {/* USERNAME */}
+
+                <div className="login-field">
+
+                  <label htmlFor="username">
+                    Username
+                  </label>
+
+                  <input
+                    id="username"
+                    type="text"
+                    value={username}
+                    onChange={(event) =>
+                      setUsername(
+                        event.target.value
+                      )
+                    }
+                    placeholder="Enter username"
+                    autoComplete="username"
+                    disabled={
+                      loginLoading
+                    }
+                  />
+
+                </div>
+
+                {/* PASSWORD */}
+
+                <div className="login-field">
+
+                  <label htmlFor="password">
+                    Password
+                  </label>
+
+                  <input
+                    id="password"
+                    type="password"
+                    value={password}
+                    onChange={(event) =>
+                      setPassword(
+                        event.target.value
+                      )
+                    }
+                    placeholder="Enter password"
+                    autoComplete="current-password"
+                    disabled={
+                      loginLoading
+                    }
+                  />
+
+                </div>
+
+                {/* LOGIN BUTTON */}
+
+                <button
+                  type="submit"
+                  className="login-button"
+                  disabled={
+                    loginLoading
+                  }
+                >
+                  {loginLoading
+                    ? "Signing in..."
+                    : "Login"}
+                </button>
+
+              </form>
+
+              {/* REGISTER LINK */}
+
+              <div className="auth-switch">
+
+                <span>
+                  Don't have an account?
+                </span>
+
+                <button
+                  type="button"
+                  className="auth-switch-button"
+                  onClick={
+                    showRegister
+                  }
+                  disabled={
+                    loginLoading
+                  }
+                >
+                  Create Account
+                </button>
+
+              </div>
+            </>
           )}
 
-          {/* LOGIN FORM */}
+          {/* ==================================================
+              REGISTER SCREEN
+          ================================================== */}
 
-          <form
-            onSubmit={handleLogin}
-            className="login-form"
-          >
+          {authMode === "register" && (
+            <>
+              <h1>
+                Create Account
+              </h1>
 
-            {/* USERNAME */}
+              <p className="login-subtitle">
+                Register New Admin User
+              </p>
 
-            <div className="login-field">
+              {registerError && (
+                <div className="login-error">
+                  {registerError}
+                </div>
+              )}
 
-              <label htmlFor="username">
-                Username
-              </label>
+              {registerSuccess && (
+                <div
+                  className="login-success"
+                  style={{
+                    marginBottom:
+                      "16px",
+                    padding:
+                      "12px 14px",
+                    borderRadius:
+                      "10px",
+                    background:
+                      "rgba(34, 197, 94, 0.12)",
+                    border:
+                      "1px solid rgba(34, 197, 94, 0.35)",
+                    color:
+                      "#86efac",
+                  }}
+                >
+                  ✅{" "}
+                  {registerSuccess}
+                  <br />
+                  <small>
+                    Returning to login...
+                  </small>
+                </div>
+              )}
 
-              <input
-                id="username"
-                type="text"
-                value={username}
-
-                onChange={(event) =>
-                  setUsername(
-                    event.target.value
-                  )
+              <form
+                onSubmit={
+                  handleRegister
                 }
+                className="login-form"
+              >
 
-                placeholder="Enter username"
+                {/* USERNAME */}
 
-                autoComplete="username"
+                <div className="login-field">
 
-                disabled={
-                  loginLoading
-                }
-              />
+                  <label htmlFor="register-username">
+                    Username
+                  </label>
 
-            </div>
+                  <input
+                    id="register-username"
+                    type="text"
+                    value={
+                      registerUsername
+                    }
+                    onChange={(event) =>
+                      setRegisterUsername(
+                        event.target.value
+                      )
+                    }
+                    placeholder="Enter username"
+                    autoComplete="username"
+                    disabled={
+                      registerLoading
+                    }
+                  />
 
-            {/* PASSWORD */}
+                </div>
 
-            <div className="login-field">
+                {/* PASSWORD */}
 
-              <label htmlFor="password">
-                Password
-              </label>
+                <div className="login-field">
 
-              <input
-                id="password"
-                type="password"
-                value={password}
+                  <label htmlFor="register-password">
+                    Password
+                  </label>
 
-                onChange={(event) =>
-                  setPassword(
-                    event.target.value
-                  )
-                }
+                  <input
+                    id="register-password"
+                    type="password"
+                    value={
+                      registerPassword
+                    }
+                    onChange={(event) =>
+                      setRegisterPassword(
+                        event.target.value
+                      )
+                    }
+                    placeholder="Enter password"
+                    autoComplete="new-password"
+                    disabled={
+                      registerLoading
+                    }
+                  />
 
-                placeholder="Enter password"
+                </div>
 
-                autoComplete="current-password"
+                {/* CONFIRM PASSWORD */}
 
-                disabled={
-                  loginLoading
-                }
-              />
+                <div className="login-field">
 
-            </div>
+                  <label htmlFor="confirm-password">
+                    Confirm Password
+                  </label>
 
-            {/* LOGIN BUTTON */}
+                  <input
+                    id="confirm-password"
+                    type="password"
+                    value={
+                      confirmPassword
+                    }
+                    onChange={(event) =>
+                      setConfirmPassword(
+                        event.target.value
+                      )
+                    }
+                    placeholder="Re-enter password"
+                    autoComplete="new-password"
+                    disabled={
+                      registerLoading
+                    }
+                  />
 
-            <button
-              type="submit"
-              className="login-button"
-              disabled={
-                loginLoading
-              }
-            >
-              {loginLoading
-                ? "Signing in..."
-                : "Login"}
-            </button>
+                </div>
 
-          </form>
+                {/* REGISTER BUTTON */}
 
-          {/* LOGIN FOOTER */}
+                <button
+                  type="submit"
+                  className="login-button"
+                  disabled={
+                    registerLoading
+                  }
+                >
+                  {registerLoading
+                    ? "Creating Account..."
+                    : "Create Account"}
+                </button>
+
+              </form>
+
+              {/* BACK TO LOGIN */}
+
+              <div className="auth-switch">
+
+                <span>
+                  Already have an account?
+                </span>
+
+                <button
+                  type="button"
+                  className="auth-switch-button"
+                  onClick={
+                    showLogin
+                  }
+                  disabled={
+                    registerLoading
+                  }
+                >
+                  Back to Login
+                </button>
+
+              </div>
+            </>
+          )}
+
+          {/* ==================================================
+              FOOTER
+          ================================================== */}
 
           <div className="login-footer">
+
             Railway Infrastructure
             Intelligence Platform
+
           </div>
 
         </div>
-
       </div>
     );
   }
@@ -713,7 +1138,6 @@ function App() {
   // ==========================================================
 
   return (
-
     <BrowserRouter>
 
       {/* GLOBAL RAILWAY LOADER */}
@@ -832,7 +1256,7 @@ function App() {
 
         {/* ====================================================
             PROJECT FOOTER
-            ==================================================== */}
+        ==================================================== */}
 
         <footer className="project-footer">
 
@@ -840,7 +1264,7 @@ function App() {
 
             <div className="moving-train">
 
-              {/* Coach 1 */}
+              {/* COACH 1 */}
 
               <div className="train-coach">
 
@@ -858,7 +1282,7 @@ function App() {
 
               <div className="train-connector"></div>
 
-              {/* Coach 2 */}
+              {/* COACH 2 */}
 
               <div className="train-coach">
 
@@ -876,7 +1300,7 @@ function App() {
 
               <div className="train-connector"></div>
 
-              {/* Coach 3 */}
+              {/* COACH 3 */}
 
               <div className="train-coach">
 
@@ -894,7 +1318,7 @@ function App() {
 
               <div className="train-connector"></div>
 
-              {/* Coach 4 */}
+              {/* COACH 4 */}
 
               <div className="train-coach">
 
@@ -912,7 +1336,7 @@ function App() {
 
               <div className="train-connector"></div>
 
-              {/* Coach 5 */}
+              {/* COACH 5 */}
 
               <div className="train-coach">
 
@@ -943,9 +1367,11 @@ function App() {
                   </div>
 
                   <div className="engine-name">
+
                     <strong>
                       Abhishek Kumar
                     </strong>
+
                   </div>
 
                 </div>

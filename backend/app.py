@@ -917,20 +917,15 @@ def create_maintenance_block(
     if not task_ids:
         raise HTTPException(
             status_code=400,
-            detail=(
-                "At least one task ID is required."
-            ),
+            detail="At least one task ID is required.",
         )
 
-    unique_task_ids = list(
-        dict.fromkeys(task_ids)
-    )
+    unique_task_ids = list(dict.fromkeys(task_ids))
 
     section = (
         db.query(Section)
         .filter(
-            Section.section_id
-            == section_id
+            Section.section_id == section_id
         )
         .first()
     )
@@ -938,36 +933,30 @@ def create_maintenance_block(
     if section is None:
         raise HTTPException(
             status_code=404,
-            detail=(
-                f"Section {section_id} not found."
-            ),
+            detail=f"Section {section_id} not found.",
         )
 
     tasks = (
-        db.query(
-            MaintenanceTask
-        )
+        db.query(MaintenanceTask)
         .filter(
-            MaintenanceTask.task_id.in_(
-                unique_task_ids
-            )
+            MaintenanceTask.task_id.in_(unique_task_ids)
         )
         .all()
     )
 
-    if (
-        len(tasks)
-        != len(unique_task_ids)
-    ):
+    if len(tasks) != len(unique_task_ids):
         raise HTTPException(
             status_code=404,
-            detail=(
-                "One or more task IDs were not found."
-            ),
+            detail="One or more task IDs were not found.",
         )
+
+    # ========================================================
+    # TASK VALIDATION + DUPLICATE ACTIVE-BLOCK PROTECTION
+    # ========================================================
 
     for task in tasks:
 
+        # Task must belong to selected section
         if task.section_id != section_id:
             raise HTTPException(
                 status_code=400,
@@ -977,6 +966,7 @@ def create_maintenance_block(
                 ),
             )
 
+        # Completed / cancelled tasks cannot be scheduled
         if task.status in {
             "COMPLETED",
             "CANCELLED",
@@ -989,6 +979,61 @@ def create_maintenance_block(
                     f"{task.status}."
                 ),
             )
+
+        # Same task cannot already belong to an active block
+        existing_active_assignment = (
+            db.query(BlockTask)
+            .join(
+                Block,
+                Block.block_id == BlockTask.block_id,
+            )
+            .filter(
+                BlockTask.task_id == task.task_id,
+                Block.status.in_(
+                    [
+                        "PLANNED",
+                        "APPROVED",
+                        "IN_PROGRESS",
+                    ]
+                ),
+            )
+            .first()
+        )
+
+        if existing_active_assignment is not None:
+
+            existing_block = (
+                db.query(Block)
+                .filter(
+                    Block.block_id
+                    == existing_active_assignment.block_id
+                )
+                .first()
+            )
+
+            existing_block_code = (
+                existing_block.block_code
+                if existing_block
+                else (
+                    f"Block "
+                    f"{existing_active_assignment.block_id}"
+                )
+            )
+
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Task {task.task_code} is already "
+                    f"scheduled in active block "
+                    f"{existing_block_code}. "
+                    f"It cannot be assigned to another "
+                    f"active maintenance block."
+                ),
+            )
+
+    # ========================================================
+    # TIME VALIDATION
+    # ========================================================
 
     try:
         parsed_start_time = datetime.strptime(
@@ -1004,31 +1049,25 @@ def create_maintenance_block(
     except ValueError:
         raise HTTPException(
             status_code=400,
-            detail=(
-                "Time must be in HH:MM format."
-            ),
+            detail="Time must be in HH:MM format.",
         )
 
-    if (
-        parsed_start_time
-        >= parsed_end_time
-    ):
+    if parsed_start_time >= parsed_end_time:
         raise HTTPException(
             status_code=400,
-            detail=(
-                "Start time must be before end time."
-            ),
+            detail="Start time must be before end time.",
         )
+
+    # ========================================================
+    # EXISTING BLOCK OVERLAP CHECK
+    # ========================================================
 
     existing_blocks = (
         db.query(Block)
         .filter(
-            Block.section_id
-            == section_id,
-            Block.block_date
-            == block_date,
-            Block.status
-            != "CANCELLED",
+            Block.section_id == section_id,
+            Block.block_date == block_date,
+            Block.status != "CANCELLED",
         )
         .all()
     )
@@ -1046,22 +1085,18 @@ def create_maintenance_block(
     for existing_block in existing_blocks:
 
         existing_start = (
-            existing_block.start_time.hour
-            * 60
+            existing_block.start_time.hour * 60
             + existing_block.start_time.minute
         )
 
         existing_end = (
-            existing_block.end_time.hour
-            * 60
+            existing_block.end_time.hour * 60
             + existing_block.end_time.minute
         )
 
         if (
-            new_start_minutes
-            < existing_end
-            and existing_start
-            < new_end_minutes
+            new_start_minutes < existing_end
+            and existing_start < new_end_minutes
         ):
             raise HTTPException(
                 status_code=409,
@@ -1071,11 +1106,14 @@ def create_maintenance_block(
                 ),
             )
 
+    # ========================================================
+    # CREATE BLOCK
+    # ========================================================
+
     existing_count = (
         db.query(Block)
         .filter(
-            Block.block_date
-            == block_date
+            Block.block_date == block_date
         )
         .count()
     )
@@ -1101,6 +1139,7 @@ def create_maintenance_block(
     db.add(block)
     db.flush()
 
+    # Link tasks to block
     for task in tasks:
 
         db.add(
@@ -1112,6 +1151,10 @@ def create_maintenance_block(
 
         task.status = "SCHEDULED"
 
+    # ========================================================
+    # IMPACT + RECOMMENDATION
+    # ========================================================
+
     impact = analyze_block_impact(
         db=db,
         block=block,
@@ -1122,26 +1165,20 @@ def create_maintenance_block(
         block=block,
     )
 
-    alternative_start = (
-        recommendation.get(
-            "alternative_start_time"
-        )
+    alternative_start = recommendation.get(
+        "alternative_start_time"
     )
 
-    alternative_end = (
-        recommendation.get(
-            "alternative_end_time"
-        )
+    alternative_end = recommendation.get(
+        "alternative_end_time"
     )
 
     actual_timing_changed = (
         alternative_start is not None
         and alternative_end is not None
         and (
-            alternative_start
-            != block.start_time
-            or alternative_end
-            != block.end_time
+            alternative_start != block.start_time
+            or alternative_end != block.end_time
         )
     )
 
@@ -1174,60 +1211,47 @@ def create_maintenance_block(
 
     db.refresh(block)
 
+    # ========================================================
+    # RESPONSE
+    # ========================================================
+
     return {
         "message": (
             "Maintenance block created successfully"
         ),
         "block": {
-            "block_id":
-                block.block_id,
-            "block_code":
-                block.block_code,
-            "section_id":
-                block.section_id,
-            "block_date":
-                block.block_date,
-            "start_time":
-                block.start_time,
-            "end_time":
-                block.end_time,
-            "reason":
-                block.reason,
-            "status":
-                block.status,
-            "task_ids":
-                unique_task_ids,
-            "conflict_count":
-                impact.get(
-                    "conflict_count",
-                    0,
-                ),
-            "affected_train_ids":
-                impact.get(
-                    "affected_train_ids",
-                    [],
-                ),
-            "total_conflict_minutes":
-                impact.get(
-                    "total_conflict_minutes",
-                    0,
-                ),
-            "impact_level":
-                impact.get(
-                    "impact_level"
-                ),
-            "recommended_action":
-                recommendation.get(
-                    "recommended_action"
-                ),
-            "recommendation":
-                recommendation.get(
-                    "recommendation"
-                ),
-            "alternative_start_time":
-                alternative_start,
-            "alternative_end_time":
-                alternative_end,
+            "block_id": block.block_id,
+            "block_code": block.block_code,
+            "section_id": block.section_id,
+            "block_date": block.block_date,
+            "start_time": block.start_time,
+            "end_time": block.end_time,
+            "reason": block.reason,
+            "status": block.status,
+            "task_ids": unique_task_ids,
+            "conflict_count": impact.get(
+                "conflict_count",
+                0,
+            ),
+            "affected_train_ids": impact.get(
+                "affected_train_ids",
+                [],
+            ),
+            "total_conflict_minutes": impact.get(
+                "total_conflict_minutes",
+                0,
+            ),
+            "impact_level": impact.get(
+                "impact_level"
+            ),
+            "recommended_action": recommendation.get(
+                "recommended_action"
+            ),
+            "recommendation": recommendation.get(
+                "recommendation"
+            ),
+            "alternative_start_time": alternative_start,
+            "alternative_end_time": alternative_end,
         },
     }
 

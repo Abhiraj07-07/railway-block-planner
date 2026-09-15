@@ -153,7 +153,7 @@ function Navbar({ currentUser, onLogout }) {
 
         <div className="nav-user-name">
           👤{" "}
-          {currentUser?.username || "Abhishek Kumar"}
+          {currentUser?.username || "Admin"}
         </div>
 
         <button

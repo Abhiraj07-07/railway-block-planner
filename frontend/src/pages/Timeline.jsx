@@ -959,63 +959,47 @@ apiRequest(
         setApprovalError("");
         setApprovalSuccess("");
 
-        const params =
-          new URLSearchParams();
+const params = new URLSearchParams();
 
-        params.set(
-          "section_id",
-          String(
-            recommendation.section_id
-          )
-        );
+params.set(
+  "section_id",
+  String(recommendation.section_id)
+);
 
-        params.set(
-          "block_date",
-          blockDate
-        );
+params.set(
+  "block_date",
+  blockDate
+);
 
-        params.set(
-          "start_time",
-          startTime
-        );
+params.set(
+  "start_time",
+  startTime
+);
 
-        params.set(
-          "end_time",
-          endTime
-        );
+params.set(
+  "end_time",
+  endTime
+);
 
-        params.set(
-          "admin",
-          "Abhishek Pal"
-        );
+const numericTaskIds = taskIds
+  .map((id) => Number(id))
+  .filter((id) => !Number.isNaN(id));
 
-        const numericTaskIds =
-          taskIds
-            .map(
-              (id) =>
-                Number(id)
-            )
-            .filter(
-              (id) =>
-                !Number.isNaN(id)
-            );
-
-        const data =
-  await apiRequest(
-    `${API_BASE}/planner/create-block?${params.toString()}`,
-    {
-      method: "POST",
-      loaderMessage:
-        "Creating approved maintenance block...",
-      headers: {
-        "Content-Type":
-          "application/json",
-      },
-      body: JSON.stringify(
-        numericTaskIds
-      ),
-    }
+numericTaskIds.forEach((taskId) => {
+  params.append(
+    "task_ids",
+    String(taskId)
   );
+});
+
+const data = await apiRequest(
+  `${API_BASE}/planner/create-block?${params.toString()}`,
+  {
+    method: "POST",
+    loaderMessage:
+      "Creating approved maintenance block...",
+  }
+);
         setApprovalSuccess(
           data?.message ||
             "Maintenance block created successfully."

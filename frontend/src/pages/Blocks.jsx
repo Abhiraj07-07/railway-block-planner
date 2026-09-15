@@ -83,7 +83,10 @@ const normalizeArray = (value) => {
     return value.tasks;
   }
 
-  if (value?.decisions && Array.isArray(value.decisions)) {
+  if (
+    value?.decisions &&
+    Array.isArray(value.decisions)
+  ) {
     return value.decisions;
   }
 
@@ -218,6 +221,22 @@ const getTodayISO = () => {
   return `${year}-${month}-${day}`;
 };
 
+/*
+  Build repeated query params:
+  task_ids=1&task_ids=2&task_ids=3
+*/
+const appendTaskIds = (
+  params,
+  taskIds
+) => {
+  taskIds.forEach((taskId) => {
+    params.append(
+      "task_ids",
+      String(taskId)
+    );
+  });
+};
+
 /* =========================================================
    COMPONENT
 ========================================================= */
@@ -230,7 +249,8 @@ function Blocks() {
   const [blocks, setBlocks] = useState([]);
   const [sections, setSections] = useState([]);
   const [tasks, setTasks] = useState([]);
-  const [aiDecisions, setAiDecisions] = useState([]);
+  const [aiDecisions, setAiDecisions] =
+    useState([]);
   const [aiRecommendations, setAiRecommendations] =
     useState([]);
 
@@ -238,7 +258,9 @@ function Blocks() {
      LOADING
   ======================================================= */
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] =
+    useState(true);
+
   const [refreshing, setRefreshing] =
     useState(false);
 
@@ -258,14 +280,17 @@ function Blocks() {
     useState(null);
 
   const [resettingDemoData, setResettingDemoData] =
-  useState(false);  
+    useState(false);
 
   /* =======================================================
      UI
   ======================================================= */
 
-  const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
+  const [error, setError] =
+    useState("");
+
+  const [message, setMessage] =
+    useState("");
 
   const [blockFilter, setBlockFilter] =
     useState("ALL");
@@ -276,13 +301,14 @@ function Blocks() {
   const [recommendationDate, setRecommendationDate] =
     useState(getTodayISO());
 
-  const [newBlock, setNewBlock] = useState({
-    section_id: "",
-    block_date: "",
-    start_time: "",
-    end_time: "",
-    task_ids: [],
-  });
+  const [newBlock, setNewBlock] =
+    useState({
+      section_id: "",
+      block_date: "",
+      start_time: "",
+      end_time: "",
+      task_ids: [],
+    });
 
   /* =======================================================
      LOAD CORE DATA
@@ -304,37 +330,38 @@ function Blocks() {
       setError("");
 
       const results =
-  await Promise.allSettled([
-    authFetch(
-      `${API_BASE}/planner/blocks`,
-      {
-        loaderMessage:
-          "Loading maintenance blocks...",
-      }
-    ),
+        await Promise.allSettled([
+          authFetch(
+            `${API_BASE}/planner/blocks`,
+            {
+              loaderMessage:
+                "Loading maintenance blocks...",
+            }
+          ),
 
-    authFetch(
-      `${API_BASE}/sections`,
-      {
-        loaderMessage:
-          "Loading railway sections...",
-      }
-    ),
+          authFetch(
+            `${API_BASE}/sections`,
+            {
+              loaderMessage:
+                "Loading railway sections...",
+            }
+          ),
 
-    authFetch(
-      `${API_BASE}/maintenance-tasks`,
-      {
-        loaderMessage:
-          "Loading maintenance tasks...",
-      }
-    ),
-  ]);
+          authFetch(
+            `${API_BASE}/maintenance-tasks`,
+            {
+              loaderMessage:
+                "Loading maintenance tasks...",
+            }
+          ),
+        ]);
 
-      /* -----------------------------------------------------
+      /* ---------------------------------------------------
          BLOCKS
-      ----------------------------------------------------- */
+      --------------------------------------------------- */
 
-      const blocksResult = results[0];
+      const blocksResult =
+        results[0];
 
       if (
         blocksResult.status ===
@@ -362,11 +389,12 @@ function Blocks() {
         );
       }
 
-      /* -----------------------------------------------------
+      /* ---------------------------------------------------
          SECTIONS
-      ----------------------------------------------------- */
+      --------------------------------------------------- */
 
-      const sectionsResult = results[1];
+      const sectionsResult =
+        results[1];
 
       if (
         sectionsResult.status ===
@@ -385,11 +413,12 @@ function Blocks() {
         }
       }
 
-      /* -----------------------------------------------------
+      /* ---------------------------------------------------
          TASKS
-      ----------------------------------------------------- */
+      --------------------------------------------------- */
 
-      const tasksResult = results[2];
+      const tasksResult =
+        results[2];
 
       if (
         tasksResult.status ===
@@ -432,13 +461,13 @@ function Blocks() {
       setAiLoading(true);
 
       const response =
-  await authFetch(
-    `${API_BASE}/ai/decisions`,
-    {
-      loaderMessage:
-        "Running AI risk analysis...",
-    }
-  );
+        await authFetch(
+          `${API_BASE}/ai/decisions`,
+          {
+            loaderMessage:
+              "Running AI risk analysis...",
+          }
+        );
 
       const data =
         await safeJson(response);
@@ -475,15 +504,15 @@ function Blocks() {
       setError("");
 
       const response =
-  await authFetch(
-    `${API_BASE}/planner/recommendations?schedule_date=${encodeURIComponent(
-      date
-    )}`,
-    {
-      loaderMessage:
-        "AI is finding safe maintenance windows...",
-    }
-  );
+        await authFetch(
+          `${API_BASE}/planner/recommendations?schedule_date=${encodeURIComponent(
+            date
+          )}`,
+          {
+            loaderMessage:
+              "AI is finding safe maintenance windows...",
+          }
+        );
 
       const data =
         await safeJson(response);
@@ -582,23 +611,33 @@ function Blocks() {
      FILTER
   ======================================================= */
 
-  const filteredBlocks = useMemo(() => {
-  if (blockFilter === "ALL") {
-    return blocks;
-  }
+  const filteredBlocks =
+    useMemo(() => {
+      if (blockFilter === "ALL") {
+        return blocks;
+      }
 
-  if (blockFilter === "REPLAN_REQUIRED") {
-    return blocks.filter(
-      (block) =>
-        block.replan_required === true
-    );
-  }
+      if (
+        blockFilter ===
+        "REPLAN_REQUIRED"
+      ) {
+        return blocks.filter(
+          (block) =>
+            block.replan_required ===
+            true
+        );
+      }
 
-  return blocks.filter(
-    (block) =>
-      block.status === blockFilter
-  );
-}, [blocks, blockFilter]);
+      return blocks.filter(
+        (block) =>
+          block.status ===
+          blockFilter
+      );
+    }, [
+      blocks,
+      blockFilter,
+    ]);
+
   /* =======================================================
      COUNTS
   ======================================================= */
@@ -656,15 +695,16 @@ function Blocks() {
       [blocks]
     );
 
-  const replanCount = useMemo(
-    () =>
-      blocks.filter(
-        (block) =>
-          block.replan_required ===
-          true
-      ).length,
-    [blocks]
-  );
+  const replanCount =
+    useMemo(
+      () =>
+        blocks.filter(
+          (block) =>
+            block.replan_required ===
+            true
+        ).length,
+      [blocks]
+    );
 
   /* =======================================================
      TASK SELECTION
@@ -778,36 +818,47 @@ function Blocks() {
             newBlock.end_time
           );
 
-        const url =
-          `${API_BASE}/planner/create-block` +
-          `?section_id=${encodeURIComponent(
+        const params =
+          new URLSearchParams();
+
+        params.set(
+          "section_id",
+          String(
             newBlock.section_id
-          )}` +
-          `&block_date=${encodeURIComponent(
-            newBlock.block_date
-          )}` +
-          `&start_time=${encodeURIComponent(
-            startTime
-          )}` +
-          `&end_time=${encodeURIComponent(
-            endTime
-          )}` +
-          `&admin=${encodeURIComponent(
-            "Abhishek Pal"
-          )}`;
+          )
+        );
+
+        params.set(
+          "block_date",
+          newBlock.block_date
+        );
+
+        params.set(
+          "start_time",
+          startTime
+        );
+
+        params.set(
+          "end_time",
+          endTime
+        );
+
+        /*
+          IMPORTANT:
+          task_ids must be sent as repeated
+          query parameters because FastAPI
+          expects list[int] as query params.
+        */
+        appendTaskIds(
+          params,
+          newBlock.task_ids
+        );
 
         const response =
           await authFetch(
-            url,
+            `${API_BASE}/planner/create-block?${params.toString()}`,
             {
               method: "POST",
-              headers: {
-                "Content-Type":
-                  "application/json",
-              },
-              body: JSON.stringify(
-                newBlock.task_ids
-              ),
             }
           );
 
@@ -920,36 +971,47 @@ function Blocks() {
           );
         }
 
-        const url =
-          `${API_BASE}/planner/create-block` +
-          `?section_id=${encodeURIComponent(
-            recommendation.section_id
-          )}` +
-          `&block_date=${encodeURIComponent(
-            blockDate
-          )}` +
-          `&start_time=${encodeURIComponent(
-            startTime
-          )}` +
-          `&end_time=${encodeURIComponent(
-            endTime
-          )}` +
-          `&admin=${encodeURIComponent(
-            "Abhishek Pal"
-          )}`;
+        const params =
+          new URLSearchParams();
 
+        params.set(
+          "section_id",
+          String(
+            recommendation.section_id
+          )
+        );
+
+        params.set(
+          "block_date",
+          blockDate
+        );
+
+        params.set(
+          "start_time",
+          startTime
+        );
+
+        params.set(
+          "end_time",
+          endTime
+        );
+
+        appendTaskIds(
+          params,
+          taskIds
+        );
+
+        /*
+          IMPORTANT:
+          No hard-coded username.
+          No &admin= parameter.
+          Backend identifies creator from JWT.
+        */
         const response =
           await authFetch(
-            url,
+            `${API_BASE}/planner/create-block?${params.toString()}`,
             {
               method: "POST",
-              headers: {
-                "Content-Type":
-                  "application/json",
-              },
-              body: JSON.stringify(
-                taskIds
-              ),
             }
           );
 
@@ -964,7 +1026,10 @@ function Blocks() {
         }
 
         setMessage(
-          `✅ AI recommendation converted into a planned maintenance block.`
+          `✅ ${
+            data?.message ||
+            "AI recommendation converted into a planned maintenance block."
+          }`
         );
 
         await loadCoreData({
@@ -993,93 +1058,96 @@ function Blocks() {
       }
     };
 
+  /* =======================================================
+     RESET DEMO DATA
+  ======================================================= */
 
-/* =======================================================
-   RESET DEMO DATA
-======================================================= */
+  const handleResetDemoData =
+    async () => {
+      const confirmed =
+        window.confirm(
+          "Reset Demo Data?\n\n" +
+            "This will delete all maintenance blocks, " +
+            "block-task links and operational events.\n\n" +
+            "Maintenance tasks will be restored to the fresh demo state.\n\n" +
+            "Stations, sections, assets, trains and schedules " +
+            "will NOT be deleted."
+        );
 
-const handleResetDemoData = async () => {
-  const confirmed = window.confirm(
-    "Reset Demo Data?\n\n" +
-      "This will delete all maintenance blocks, " +
-      "block-task links and operational events.\n\n" +
-      "Maintenance tasks will be restored to the fresh demo state.\n\n" +
-      "Stations, sections, assets, trains and schedules " +
-      "will NOT be deleted."
-  );
-
-  if (!confirmed) {
-    return;
-  }
-
-  try {
-    setResettingDemoData(true);
-    setError("");
-    setMessage("");
-
-    const response = await authFetch(
-      `${API_BASE}/admin/reset-demo-data`,
-      {
-        method: "POST",
-        loaderMessage:
-          "Resetting railway demo data...",
+      if (!confirmed) {
+        return;
       }
-    );
 
-    const data = await safeJson(response);
+      try {
+        setResettingDemoData(
+          true
+        );
 
-    if (!response.ok) {
-      throw new Error(
-        data?.detail ||
-          `Reset failed: ${response.status}`
-      );
-    }
+        setError("");
+        setMessage("");
 
-    setMessage(
-      `✅ ${
-        data?.message ||
-        "Demo data reset successfully."
-      }`
-    );
+        const response =
+          await authFetch(
+            `${API_BASE}/admin/reset-demo-data`,
+            {
+              method: "POST",
+              loaderMessage:
+                "Resetting railway demo data...",
+            }
+          );
 
-    // Clear current manual form selection
-    setNewBlock({
-      section_id: "",
-      block_date: "",
-      start_time: "",
-      end_time: "",
-      task_ids: [],
-    });
+        const data =
+          await safeJson(response);
 
-    // Close manual create form
-    setShowCreateBlock(false);
+        if (!response.ok) {
+          throw new Error(
+            data?.detail ||
+              `Reset failed: ${response.status}`
+          );
+        }
 
-    // Reload all current data
-    await loadCoreData({
-      refresh: true,
-    });
+        setMessage(
+          `✅ ${
+            data?.message ||
+            "Demo data reset successfully."
+          }`
+        );
 
-    // Reload AI data
-    await loadAIDecisions();
+        setNewBlock({
+          section_id: "",
+          block_date: "",
+          start_time: "",
+          end_time: "",
+          task_ids: [],
+        });
 
-    await loadAIRecommendations(
-      recommendationDate
-    );
-  } catch (err) {
-    console.error(
-      "Reset demo data error:",
-      err
-    );
+        setShowCreateBlock(false);
 
-    setError(
-      err?.message ||
-        "Unable to reset demo data."
-    );
-  } finally {
-    setResettingDemoData(false);
-  }
-};    
+        await loadCoreData({
+          refresh: true,
+        });
 
+        await loadAIDecisions();
+
+        await loadAIRecommendations(
+          recommendationDate
+        );
+      } catch (err) {
+        console.error(
+          "Reset demo data error:",
+          err
+        );
+
+        setError(
+          err?.message ||
+            "Unable to reset demo data."
+        );
+      } finally {
+        setResettingDemoData(
+          false
+        );
+      }
+    };
 
   /* =======================================================
      STATUS WORKFLOW
@@ -1352,19 +1420,24 @@ const handleResetDemoData = async () => {
       </div>
 
       <button
-  className="filter-button"
-  type="button"
-  onClick={handleResetDemoData}
-  disabled={resettingDemoData}
-  style={{
-    borderColor: "#f59e0b",
-    color: "#b45309",
-  }}
->
-  {resettingDemoData
-    ? "⏳ Resetting..."
-    : "🧹 Reset Demo Data"}
-</button>
+        className="filter-button"
+        type="button"
+        onClick={
+          handleResetDemoData
+        }
+        disabled={
+          resettingDemoData
+        }
+        style={{
+          borderColor: "#f59e0b",
+          color: "#b45309",
+          marginBottom: "18px",
+        }}
+      >
+        {resettingDemoData
+          ? "⏳ Resetting..."
+          : "🧹 Reset Demo Data"}
+      </button>
 
       {/* =================================================
           ALERTS
@@ -1471,7 +1544,8 @@ const handleResetDemoData = async () => {
         <div
           style={{
             marginBottom: "20px",
-            padding: "14px 16px",
+            padding:
+              "14px 16px",
             border:
               "1px solid #fed7aa",
             borderRadius: "12px",
@@ -1706,8 +1780,6 @@ const handleResetDemoData = async () => {
                     }}
                   >
 
-                    {/* TOP */}
-
                     <div
                       style={{
                         display:
@@ -1784,8 +1856,6 @@ const handleResetDemoData = async () => {
                       </span>
 
                     </div>
-
-                    {/* DATE / TIME */}
 
                     <div
                       style={{
@@ -1892,8 +1962,6 @@ const handleResetDemoData = async () => {
 
                     </div>
 
-                    {/* SECTION DETAILS */}
-
                     <div
                       style={{
                         fontSize:
@@ -1930,8 +1998,6 @@ const handleResetDemoData = async () => {
 
                     </div>
 
-                    {/* TASKS */}
-
                     <div
                       style={{
                         marginBottom:
@@ -1967,10 +2033,8 @@ const handleResetDemoData = async () => {
                         }}
                       >
 
-                        {(
-                          recommendation.task_codes ||
-                          []
-                        ).map(
+                        {(recommendation.task_codes ||
+                          []).map(
                           (code) => (
                             <span
                               key={
@@ -2001,8 +2065,6 @@ const handleResetDemoData = async () => {
                       </div>
 
                     </div>
-
-                    {/* REASON */}
 
                     <div
                       style={{
@@ -2035,8 +2097,6 @@ const handleResetDemoData = async () => {
                         "Priority-aware AI planning with train-conflict avoidance."}
 
                     </div>
-
-                    {/* CREATE */}
 
                     <button
                       type="button"
@@ -2248,6 +2308,17 @@ const handleResetDemoData = async () => {
                       task.task_id
                     );
 
+                  const status =
+                    String(
+                      task.status || ""
+                    ).toUpperCase();
+
+                  const disabled =
+                    status ===
+                      "COMPLETED" ||
+                    status ===
+                      "CANCELLED";
+
                   return (
                     <label
                       className="block-task-item"
@@ -2270,6 +2341,9 @@ const handleResetDemoData = async () => {
                         type="checkbox"
                         checked={
                           selected
+                        }
+                        disabled={
+                          disabled
                         }
                         onChange={() =>
                           toggleTask(
@@ -2297,6 +2371,13 @@ const handleResetDemoData = async () => {
                         {
                           task.severity
                         }
+
+                        {" · "}
+
+                        <small>
+                          {status ||
+                            "UNKNOWN"}
+                        </small>
 
                         {decision ? (
 
@@ -2354,7 +2435,10 @@ const handleResetDemoData = async () => {
                   "700",
               }}
             >
-              {newBlock.task_ids.length} task
+              {
+                newBlock.task_ids.length
+              }{" "}
+              task
               {newBlock.task_ids.length !==
               1
                 ? "s"
@@ -2565,6 +2649,10 @@ const handleResetDemoData = async () => {
                   </th>
 
                   <th>
+                    Created By
+                  </th>
+
+                  <th>
                     AI Intelligence
                   </th>
 
@@ -2716,6 +2804,7 @@ const handleResetDemoData = async () => {
                                 (
                                   task
                                 ) => (
+
                                   <span
                                     className="task-code-chip"
                                     key={
@@ -2730,6 +2819,7 @@ const handleResetDemoData = async () => {
                                       task.task_code
                                     }
                                   </span>
+
                                 )
                               )}
 
@@ -2742,6 +2832,20 @@ const handleResetDemoData = async () => {
                             </span>
 
                           )}
+
+                        </td>
+
+                        {/* CREATED BY */}
+
+                        <td>
+
+                          <strong>
+                            👤{" "}
+                            {
+                              block.created_by ||
+                              "—"
+                            }
+                          </strong>
 
                         </td>
 

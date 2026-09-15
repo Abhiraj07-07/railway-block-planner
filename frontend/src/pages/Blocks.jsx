@@ -257,6 +257,9 @@ function Blocks() {
   const [statusLoading, setStatusLoading] =
     useState(null);
 
+  const [resettingDemoData, setResettingDemoData] =
+  useState(false);  
+
   /* =======================================================
      UI
   ======================================================= */
@@ -990,6 +993,94 @@ function Blocks() {
       }
     };
 
+
+/* =======================================================
+   RESET DEMO DATA
+======================================================= */
+
+const handleResetDemoData = async () => {
+  const confirmed = window.confirm(
+    "Reset Demo Data?\n\n" +
+      "This will delete all maintenance blocks, " +
+      "block-task links and operational events.\n\n" +
+      "Maintenance tasks will be restored to the fresh demo state.\n\n" +
+      "Stations, sections, assets, trains and schedules " +
+      "will NOT be deleted."
+  );
+
+  if (!confirmed) {
+    return;
+  }
+
+  try {
+    setResettingDemoData(true);
+    setError("");
+    setMessage("");
+
+    const response = await authFetch(
+      `${API_BASE}/admin/reset-demo-data`,
+      {
+        method: "POST",
+        loaderMessage:
+          "Resetting railway demo data...",
+      }
+    );
+
+    const data = await safeJson(response);
+
+    if (!response.ok) {
+      throw new Error(
+        data?.detail ||
+          `Reset failed: ${response.status}`
+      );
+    }
+
+    setMessage(
+      `✅ ${
+        data?.message ||
+        "Demo data reset successfully."
+      }`
+    );
+
+    // Clear current manual form selection
+    setNewBlock({
+      section_id: "",
+      block_date: "",
+      start_time: "",
+      end_time: "",
+      task_ids: [],
+    });
+
+    // Close manual create form
+    setShowCreateBlock(false);
+
+    // Reload all current data
+    await loadCoreData({
+      refresh: true,
+    });
+
+    // Reload AI data
+    await loadAIDecisions();
+
+    await loadAIRecommendations(
+      recommendationDate
+    );
+  } catch (err) {
+    console.error(
+      "Reset demo data error:",
+      err
+    );
+
+    setError(
+      err?.message ||
+        "Unable to reset demo data."
+    );
+  } finally {
+    setResettingDemoData(false);
+  }
+};    
+
+
   /* =======================================================
      STATUS WORKFLOW
   ======================================================= */
@@ -1259,6 +1350,21 @@ function Blocks() {
         </div>
 
       </div>
+
+      <button
+  className="filter-button"
+  type="button"
+  onClick={handleResetDemoData}
+  disabled={resettingDemoData}
+  style={{
+    borderColor: "#f59e0b",
+    color: "#b45309",
+  }}
+>
+  {resettingDemoData
+    ? "⏳ Resetting..."
+    : "🧹 Reset Demo Data"}
+</button>
 
       {/* =================================================
           ALERTS

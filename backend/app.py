@@ -1254,6 +1254,139 @@ def create_maintenance_block(
             "alternative_end_time": alternative_end,
         },
     }
+    
+    
+# ============================================================
+# RESET DEMO / TEST DATA
+# ============================================================
+
+@app.post("/admin/reset-demo-data")
+def reset_demo_data(
+    db: Session = Depends(get_db),
+    current_user=Depends(require_admin),
+):
+    """
+    Reset operational/demo data.
+
+    Deletes:
+    - Operational events
+    - Block-task relationships
+    - Maintenance blocks
+
+    Resets:
+    - Maintenance task statuses
+
+    Preserves:
+    - Stations
+    - Sections
+    - Assets
+    - Trains
+    - Train schedules
+    - Goods forecasts
+    - Defects
+    """
+
+    try:
+        # --------------------------------------------------------
+        # 1. Delete operational events
+        # --------------------------------------------------------
+        deleted_events = (
+            db.query(OperationalEvent).delete(
+                synchronize_session=False
+            )
+        )
+
+        # --------------------------------------------------------
+        # 2. Delete block-task relationships
+        # --------------------------------------------------------
+        deleted_block_tasks = (
+            db.query(BlockTask).delete(
+                synchronize_session=False
+            )
+        )
+
+        # --------------------------------------------------------
+        # 3. Delete maintenance blocks
+        # --------------------------------------------------------
+        deleted_blocks = (
+            db.query(Block).delete(
+                synchronize_session=False
+            )
+        )
+
+        # --------------------------------------------------------
+        # 4. Restore fresh demo task statuses
+        # --------------------------------------------------------
+        fresh_task_statuses = {
+            "TMS001": "OVERDUE",
+            "TMS002": "PENDING",
+            "SMMS001": "PENDING",
+            "SMMS002": "OVERDUE",
+            "TDMS001": "PENDING",
+            "TDMS002": "OVERDUE",
+            "TMS003": "PENDING",
+            "SMMS003": "PENDING",
+            "TDMS003": "PENDING",
+            "TMS004": "PENDING",
+            "SMMS004": "PENDING",
+            "TDMS004": "PENDING",
+        }
+
+        reset_task_count = 0
+
+        for task_code, status in fresh_task_statuses.items():
+            updated = (
+                db.query(MaintenanceTask)
+                .filter(
+                    MaintenanceTask.task_code
+                    == task_code
+                )
+                .update(
+                    {
+                        MaintenanceTask.status: status
+                    },
+                    synchronize_session=False,
+                )
+            )
+
+            reset_task_count += updated
+
+        # --------------------------------------------------------
+        # 5. Commit reset
+        # --------------------------------------------------------
+        db.commit()
+
+        # --------------------------------------------------------
+        # 6. Clear caches
+        # --------------------------------------------------------
+        clear_ai_cache()
+        clear_analytics_cache()
+
+        return {
+            "message": (
+                "Demo data reset successfully."
+            ),
+            "reset": {
+                "blocks_deleted": deleted_blocks,
+                "block_tasks_deleted": deleted_block_tasks,
+                "events_deleted": deleted_events,
+                "maintenance_tasks_reset":
+                    reset_task_count,
+            },
+            "master_data_preserved": True,
+            "status": "SUCCESS",
+        }
+
+    except Exception as exc:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Unable to reset demo data: "
+                f"{str(exc)}"
+            ),
+        )    
 
 
 # ============================================================

@@ -321,6 +321,8 @@ function Blocks() {
   const [message, setMessage] =
     useState("");
 
+  const [reopeningTask, setReopeningTask] = useState(null);  
+
   const [blockFilter, setBlockFilter] =
     useState("ALL");
 
@@ -765,6 +767,52 @@ function Blocks() {
       }
     );
   };
+
+const handleReopenTask = async (taskId) => {
+  try {
+    setReopeningTask(taskId);
+    setError("");
+    setMessage("");
+
+    const response = await authFetch(
+      `${API_BASE}/maintenance-tasks/${taskId}/reopen`,
+      {
+        method: "PATCH",
+        loaderMessage: "Reopening maintenance task...",
+      }
+    );
+
+    const data = await safeJson(response);
+
+    if (!response.ok) {
+      throw new Error(
+        getApiErrorMessage(
+          data,
+          `Unable to reopen task: ${response.status}`
+        )
+      );
+    }
+
+    setMessage(
+      `✅ ${
+        data?.message ||
+        "Maintenance task reopened successfully."
+      }`
+    );
+
+    await loadCoreData({ refresh: true });
+    await loadAIDecisions();
+  } catch (err) {
+    console.error("Reopen task error:", err);
+
+    setError(
+      err?.message ||
+        "Unable to reopen maintenance task."
+    );
+  } finally {
+    setReopeningTask(null);
+  }
+};  
 
   const filteredTasks = tasks.filter(
   (task) =>
@@ -2361,70 +2409,80 @@ const response =
   status === "CANCELLED" ||
   status === "SCHEDULED";
 
-        return (
-          <label
-            className="block-task-item"
-            key={task.task_id}
-            style={
-              selected
-                ? {
-                    borderColor: "#2563eb",
-                    background: "#eff6ff",
-                  }
-                : undefined
-            }
-          >
+return (
+  <div
+    className="block-task-item"
+    key={task.task_id}
+    style={
+      selected
+        ? {
+            borderColor: "#2563eb",
+            background: "#eff6ff",
+          }
+        : undefined
+    }
+  >
+    <label
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "8px",
+        flex: 1,
+        cursor: disabled
+          ? "not-allowed"
+          : "pointer",
+      }}
+    >
+      <input
+        type="checkbox"
+        checked={selected}
+        disabled={disabled}
+        onChange={() =>
+          toggleTask(task.task_id)
+        }
+      />
 
-            <input
-              type="checkbox"
-              checked={selected}
-              disabled={disabled}
-              onChange={() =>
-                toggleTask(task.task_id)
-              }
-            />
+      <span>
+        <strong>{task.task_code}</strong>
+        {" · "}
+        {task.task_type}
+        {" · "}
+        {task.severity}
+        {" · "}
+        <small>{status || "UNKNOWN"}</small>
 
-            <span>
+        {decision ? (
+          <small className="task-ai-inline">
+            {" · "}AI {decision.decision_level}
+            {" · "}ML {decision.ml_risk_percentage}%
+          </small>
+        ) : aiLoading ? (
+          <small className="task-ai-inline">
+            {" · "}AI loading...
+          </small>
+        ) : null}
+      </span>
+    </label>
 
-              <strong>
-                {task.task_code}
-              </strong>
-
-              {" · "}
-
-              {task.task_type}
-
-              {" · "}
-
-              {task.severity}
-
-              {" · "}
-
-              <small>
-                {status || "UNKNOWN"}
-              </small>
-
-              {decision ? (
-
-                <small className="task-ai-inline">
-                  {" · "}AI{" "}
-                  {decision.decision_level}
-                  {" · "}ML{" "}
-                  {decision.ml_risk_percentage}%
-                </small>
-
-              ) : aiLoading ? (
-
-                <small className="task-ai-inline">
-                  {" · "}AI loading...
-                </small>
-
-              ) : null}
-
-            </span>
-
-          </label>
-        );
+    {status === "COMPLETED" && (
+      <button
+        type="button"
+        className="table-action-button"
+        onClick={() =>
+          handleReopenTask(task.task_id)
+        }
+        disabled={
+          reopeningTask === task.task_id
+        }
+      >
+        {reopeningTask === task.task_id
+          ? "⏳"
+          : "🔄 Reopen"}
+      </button>
+    )}
+  </div>
+);
+        
       })
 
     )}

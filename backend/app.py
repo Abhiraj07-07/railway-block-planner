@@ -556,6 +556,64 @@ def get_maintenance_tasks(
 
     return result
 
+# ============================================================
+# REOPEN COMPLETED MAINTENANCE TASK
+# ============================================================
+
+@app.patch("/maintenance-tasks/{task_id}/reopen")
+def reopen_maintenance_task(
+    task_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_admin),
+):
+    task = (
+        db.query(MaintenanceTask)
+        .filter(
+            MaintenanceTask.task_id == task_id
+        )
+        .first()
+    )
+
+    if task is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Maintenance task {task_id} not found.",
+        )
+
+    if task.status != "COMPLETED":
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Only COMPLETED tasks can be reopened. "
+                f"Current status is {task.status}."
+            ),
+        )
+
+    # Reopen task for future maintenance planning.
+    # Existing completed block/history is preserved.
+    task.status = "PENDING"
+
+    db.commit()
+
+    clear_ai_cache()
+
+    db.refresh(task)
+
+    return {
+        "message": (
+            f"Maintenance task {task.task_code} "
+            "reopened successfully."
+        ),
+        "task": {
+            "task_id": task.task_id,
+            "task_code": task.task_code,
+            "section_id": task.section_id,
+            "task_type": task.task_type,
+            "severity": task.severity,
+            "status": task.status,
+        },
+    }
+
 
 # ============================================================
 # DEFECTS

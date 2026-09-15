@@ -146,6 +146,49 @@ const toHHMM = (value) => {
   return `${match[1].padStart(2, "0")}:${match[2]}`;
 };
 
+const getApiErrorMessage = (data, fallback) => {
+  if (!data) {
+    return fallback;
+  }
+
+  if (typeof data.detail === "string") {
+    return data.detail;
+  }
+
+  if (Array.isArray(data.detail)) {
+    return data.detail
+      .map((item) => {
+        if (typeof item === "string") {
+          return item;
+        }
+
+        if (item?.msg) {
+          return item.msg;
+        }
+
+        return JSON.stringify(item);
+      })
+      .join(", ");
+  }
+
+  if (
+    data.detail &&
+    typeof data.detail === "object"
+  ) {
+    return (
+      data.detail.message ||
+      data.detail.error ||
+      JSON.stringify(data.detail)
+    );
+  }
+
+  if (typeof data.message === "string") {
+    return data.message;
+  }
+
+  return fallback;
+};
+
 const toMinutes = (value) => {
   if (!value) {
     return null;
@@ -866,11 +909,13 @@ function Blocks() {
           await safeJson(response);
 
         if (!response.ok) {
-          throw new Error(
-            data?.detail ||
-              `Block creation failed: ${response.status}`
-          );
-        }
+  throw new Error(
+    getApiErrorMessage(
+      data,
+      `Block creation failed: ${response.status}`
+    )
+  );
+}
 
         setMessage(
           `✅ ${
@@ -1019,11 +1064,13 @@ function Blocks() {
           await safeJson(response);
 
         if (!response.ok) {
-          throw new Error(
-            data?.detail ||
-              `AI block creation failed: ${response.status}`
-          );
-        }
+  throw new Error(
+    getApiErrorMessage(
+      data,
+      `AI block creation failed: ${response.status}`
+    )
+  );
+}
 
         setMessage(
           `✅ ${

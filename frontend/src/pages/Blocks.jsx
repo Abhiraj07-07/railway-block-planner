@@ -264,21 +264,7 @@ const getTodayISO = () => {
   return `${year}-${month}-${day}`;
 };
 
-/*
-  Build repeated query params:
-  task_ids=1&task_ids=2&task_ids=3
-*/
-const appendTaskIds = (
-  params,
-  taskIds
-) => {
-  taskIds.forEach((taskId) => {
-    params.append(
-      "task_ids",
-      String(taskId)
-    );
-  });
-};
+
 
 /* =========================================================
    COMPONENT
@@ -887,23 +873,24 @@ function Blocks() {
         );
 
         /*
-          IMPORTANT:
-          task_ids must be sent as repeated
-          query parameters because FastAPI
-          expects list[int] as query params.
-        */
-        appendTaskIds(
-          params,
-          newBlock.task_ids
-        );
+  task_ids are sent in the JSON request body.
+  Section/date/time are sent as query parameters.
+*/
+       
 
-        const response =
-          await authFetch(
-            `${API_BASE}/planner/create-block?${params.toString()}`,
-            {
-              method: "POST",
-            }
-          );
+const response =
+  await authFetch(
+    `${API_BASE}/planner/create-block?${params.toString()}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(
+        newBlock.task_ids
+      ),
+    }
+  );
 
         const data =
           await safeJson(response);
@@ -1041,10 +1028,6 @@ function Blocks() {
           endTime
         );
 
-        appendTaskIds(
-          params,
-          taskIds
-        );
 
         /*
           IMPORTANT:
@@ -1053,12 +1036,18 @@ function Blocks() {
           Backend identifies creator from JWT.
         */
         const response =
-          await authFetch(
-            `${API_BASE}/planner/create-block?${params.toString()}`,
-            {
-              method: "POST",
-            }
-          );
+  await authFetch(
+    `${API_BASE}/planner/create-block?${params.toString()}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(
+        taskIds
+      ),
+    }
+  );
 
         const data =
           await safeJson(response);
@@ -2207,8 +2196,8 @@ function Blocks() {
             <div className="form-group">
 
               <label>
-                Railway Section
-              </label>
+  Section
+</label>
 
               <select
                 value={

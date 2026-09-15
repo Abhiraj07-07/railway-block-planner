@@ -2357,8 +2357,9 @@ const response =
           ).toUpperCase();
 
         const disabled =
-          status === "COMPLETED" ||
-          status === "CANCELLED";
+  status === "COMPLETED" ||
+  status === "CANCELLED" ||
+  status === "SCHEDULED";
 
         return (
           <label
